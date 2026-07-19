@@ -6,6 +6,7 @@ export interface ChatState {
   isStreaming: boolean;
   addMessage: (message: ChatMessage) => void;
   appendToLastMessage: (content: string) => void;
+  appendTraceStep: (step: any) => void;
   setLastMessageTrace: (trace: any[]) => void;
   setStreaming: (streaming: boolean) => void;
   clearMessages: () => void;
@@ -27,6 +28,17 @@ export const useChatStore = create<ChatState>()((set) => ({
         messages[messages.length - 1] = last;
       } else {
         messages.push({ role: "assistant", content });
+      }
+      return { messages };
+    }),
+
+  appendTraceStep: (step) =>
+    set((state) => {
+      const messages = [...state.messages];
+      if (messages.length > 0 && messages[messages.length - 1].role === "assistant") {
+        const last = { ...messages[messages.length - 1] };
+        last.trace = [...(last.trace || []), step];
+        messages[messages.length - 1] = last;
       }
       return { messages };
     }),

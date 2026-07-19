@@ -1,5 +1,4 @@
 """Chat endpoints for the Agentic RAG backend."""
-import asyncio
 import json
 from typing import AsyncGenerator
 
@@ -27,44 +26,6 @@ def _build_graph(
     embeddings = get_embeddings(embed_base_url, embed_model, embed_api_key)
     vector_store = ChromaStore(embeddings=embeddings)
     return build_agentic_rag_graph(llm, embeddings, vector_store)
-
-
-@router.post("")
-def chat(
-    request: Request,
-    question: str = Form(...),
-    chat_provider: str = Form(default="nvidia-nim"),
-    chat_base_url: str = Form(...),
-    chat_model: str = Form(...),
-    chat_api_key: str = Form(default=""),
-    embed_provider: str = Form(default="nvidia-nim"),
-    embed_base_url: str = Form(...),
-    embed_model: str = Form(...),
-    embed_api_key: str = Form(default=""),
-    web_search_enabled: bool = Form(default=False),
-    temperature: float = Form(default=0.7),
-):
-    graph = _build_graph(
-        chat_base_url, chat_model, chat_api_key,
-        embed_base_url, embed_model, embed_api_key,
-        temperature=temperature,
-    )
-    state: AgentState = {
-        "question": question,
-        "messages": [],
-        "documents": [],
-        "web_search_urls": [],
-        "generation": None,
-        "trace": [],
-        "steps": 0,
-        "web_search_enabled": web_search_enabled,
-        "max_loops": 3,
-    }
-    final_state = graph.invoke(state)
-    return {
-        "answer": final_state.get("generation", ""),
-        "trace": final_state.get("trace", []),
-    }
 
 
 @router.post("/stream")
@@ -100,15 +61,21 @@ async def chat_stream(
                 "web_search_enabled": web_search_enabled,
                 "max_loops": 3,
             }
-            final_state = await asyncio.to_thread(graph.invoke, state)
-            answer = final_state.get("generation", "")
-            trace = final_state.get("trace", [])
+            seen = 0
+            final_state = state
+            async for chunk in graph.astream(state, stream_mode="values"):
+                final_state = chunk
+                trace = chunk.get("trace", [])
+                while seen < len(trace):
+                    yield f"event: trace\ndata: {json.dumps(trace[seen])}\n\n"
+                    seen += 1
 
+            answer = final_state.get("generation", "")
             words = answer.split(" ")
             for i, word in enumerate(words):
                 payload = word if i == 0 else " " + word
                 yield f"data: {payload}\n\n"
-            yield f"event: done\ndata: {json.dumps({'trace': trace})}\n\n"
+            yield f"event: done\ndata: {json.dumps({'trace': final_state.get('trace', [])})}\n\n"
         except Exception as e:
             yield f"event: error\ndata: {json.dumps({'message': str(e)})}\n\n"
 

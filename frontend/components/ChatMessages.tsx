@@ -6,10 +6,9 @@ import ChatBubble from "./ChatBubble";
 interface ChatMessagesProps {
   messages: ChatMessage[];
   isStreaming: boolean;
-  onViewTrace: (trace: any[]) => void;
 }
 
-export default function ChatMessages({ messages, isStreaming, onViewTrace }: ChatMessagesProps) {
+export default function ChatMessages({ messages, isStreaming }: ChatMessagesProps) {
   if (messages.length === 0) {
     return (
       <div className="flex-1 flex flex-col items-center justify-center px-8">
@@ -28,7 +27,6 @@ export default function ChatMessages({ messages, isStreaming, onViewTrace }: Cha
           key={idx}
           message={msg}
           isStreaming={isStreaming && idx === messages.length - 1}
-          onViewTrace={onViewTrace}
         />
       ))}
     </div>

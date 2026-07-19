@@ -97,7 +97,11 @@ export async function* streamChat(
   embedding: ProviderField,
   webSearchEnabled: boolean,
   temperature: number
-): AsyncGenerator<string, { trace?: any[] } | null, unknown> {
+): AsyncGenerator<
+  { type: "token" | "trace"; value: string | any },
+  { trace?: any[] } | null,
+  unknown
+> {
   const form = new FormData();
   form.append("question", question);
   form.append("chat_provider", chat.provider);
@@ -158,7 +162,11 @@ export async function* streamChat(
             throw e;
           }
         }
-        yield data;
+        if (currentEvent === "trace") {
+          yield { type: "trace", value: JSON.parse(data) };
+        } else {
+          yield { type: "token", value: data };
+        }
       } else if (line.trim() === "") {
         currentEvent = "";
       }
