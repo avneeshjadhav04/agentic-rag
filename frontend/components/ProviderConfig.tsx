@@ -176,7 +176,7 @@ export default function ProviderConfig() {
           step={0.1}
           value={temperature}
           onChange={(e) => setTemperature(parseFloat(e.target.value))}
-          className="w-full accent-accent"
+          className="w-full"
         />
       </section>
 
