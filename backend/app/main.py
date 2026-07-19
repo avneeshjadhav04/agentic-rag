@@ -22,7 +22,7 @@ app.include_router(ingestion.router)
 app.include_router(config.router)
 
 
-@app.get("/health")
+@app.get("/api/health")
 def health():
     return {"status": "ok"}
 

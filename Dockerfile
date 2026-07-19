@@ -73,7 +73,8 @@ COPY scripts/start-frontend.sh ./scripts/start-frontend.sh
 COPY config/supervisord.conf ./config/supervisord.conf
 RUN chmod +x ./scripts/start.sh ./scripts/start-frontend.sh
 
-# Expose the single external port (PaaS usually provides $PORT).
+# The container listens on the port provided by the PaaS via $PORT.
+# Default is 3000, but Render/Railway override this. EXPOSE is informational.
 EXPOSE 3000
 
 ENV BACKEND_PORT=8000
