@@ -1,8 +1,21 @@
 # Multi-stage build for a single-container Agentic RAG deployment.
+# Both stages use the pure Debian Trixie slim OS image.
+
 # Stage 1: Build Next.js frontend.
-FROM node:22-slim-trixie AS frontend-builder
+FROM debian:trixie-slim AS frontend-builder
 
 WORKDIR /app/frontend
+
+# Install Node.js 22 LTS via NodeSource plus build essentials.
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    curl \
+    ca-certificates \
+    gnupg \
+    build-essential \
+    && curl -fsSL https://deb.nodesource.com/setup_22.x | bash - \
+    && apt-get install -y --no-install-recommends nodejs \
+    && rm -rf /var/lib/apt/lists/*
+
 COPY frontend/package.json frontend/package-lock.json* ./
 RUN npm install
 COPY frontend/ ./
