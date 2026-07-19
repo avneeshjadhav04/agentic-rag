@@ -1,42 +1,39 @@
 """Document loading and URL loading utilities."""
-import io
 import os
 import tempfile
-from typing import List
+from typing import List, Tuple
 
-import requests
 from langchain_core.documents import Document
 from langchain_community.document_loaders import (
     PyPDFLoader,
     TextLoader,
-    UnstructuredMarkdownLoader,
 )
 from langchain_community.document_loaders.web_base import WebBaseLoader
 
 
-def load_files(files: List[io.BytesIO]) -> List[Document]:
-    """Load documents from uploaded file-like objects."""
+def load_files(entries: List[Tuple[str, bytes]]) -> List[Document]:
+    """Load documents from uploaded file entries (name, content)."""
     documents: List[Document] = []
-    for file in files:
-        original_name = getattr(file, "name", "uploaded_file")
+    for original_name, content in entries:
         suffix = os.path.splitext(original_name)[1] or ".txt"
-        content = file.read()
-        with tempfile.NamedTemporaryFile(delete=False, suffix=suffix) as tmp:
-            tmp.write(content)
-            tmp_path = tmp.name
+        tmp_path = None
         try:
+            with tempfile.NamedTemporaryFile(delete=False, suffix=suffix) as tmp:
+                tmp.write(content)
+                tmp_path = tmp.name
             if suffix.lower() == ".pdf":
                 loader = PyPDFLoader(tmp_path)
-            elif suffix.lower() in (".md", ".markdown"):
-                loader = UnstructuredMarkdownLoader(tmp_path)
             else:
                 loader = TextLoader(tmp_path, encoding="utf-8", autodetect_encoding=True)
             documents.extend(loader.load())
+        except Exception:
+            continue
         finally:
-            try:
-                os.remove(tmp_path)
-            except OSError:
-                pass
+            if tmp_path:
+                try:
+                    os.remove(tmp_path)
+                except OSError:
+                    pass
     return documents
 
 

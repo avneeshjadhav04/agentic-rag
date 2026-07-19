@@ -1,5 +1,4 @@
 """Ingestion endpoints for files and URLs."""
-import io
 from typing import List
 
 from fastapi import APIRouter, File, Form, UploadFile
@@ -30,14 +29,12 @@ async def ingest_files(
     chunk_size: int = Form(default=1000),
     chunk_overlap: int = Form(default=200),
 ):
-    file_streams = []
+    file_entries: list[tuple[str, bytes]] = []
     for file in files:
         content = await file.read()
-        stream = io.BytesIO(content)
-        stream.name = file.filename or "uploaded_file"
-        file_streams.append(stream)
+        file_entries.append((file.filename or "uploaded_file", content))
 
-    documents = load_files(file_streams)
+    documents = load_files(file_entries)
     chunks = chunk_documents(documents, chunk_size=chunk_size, chunk_overlap=chunk_overlap)
     store = _build_store(embed_base_url, embed_model, embed_api_key)
     store.add_documents(chunks)
