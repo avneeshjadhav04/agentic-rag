@@ -36,7 +36,7 @@ export default function ChatBubble({ message, isStreaming }: ChatBubbleProps) {
       )}
 
       {isStreaming && !message.content && !isUser ? (
-        <span className="gradient-working font-mono text-[11px] uppercase tracking-widest">
+        <span className="gradient-working font-mono text-[14px] uppercase tracking-widest">
           Working
         </span>
       ) : (
