@@ -2,7 +2,7 @@
 
 import { useConfigStore } from "@/store/configStore";
 import { clearStore, ingestFiles, ingestUrls, listSources } from "@/lib/api";
-import { useState, useEffect, useCallback } from "react";
+import { useState, useEffect, useCallback, useRef } from "react";
 import { Loader2, RefreshCw, Plus, Minus } from "lucide-react";
 
 const labelClass = "font-mono text-[10px] uppercase tracking-widest text-muted";
@@ -26,6 +26,7 @@ export default function IngestionPanel() {
   const [sources, setSources] = useState<string[]>([]);
   const [loadingSources, setLoadingSources] = useState(false);
   const [sourcesExpanded, setSourcesExpanded] = useState(false);
+  const fileInputRef = useRef<HTMLInputElement>(null);
 
   const refreshSources = useCallback(async () => {
     setLoadingSources(true);
@@ -65,6 +66,7 @@ export default function IngestionPanel() {
       setMessage(msg);
       setMessageType(failed.length ? "error" : warned.length || res.ingested === 0 ? "warn" : "info");
       setFiles(null);
+      if (fileInputRef.current) fileInputRef.current.value = "";
       refreshSources();
     } catch (e: any) {
       setMessage(e.message || "File ingestion failed");
@@ -122,6 +124,7 @@ export default function IngestionPanel() {
         <input
           type="file"
           multiple
+          ref={fileInputRef}
           onChange={(e) => setFiles(e.target.files)}
           className="block w-full text-xs text-muted file:mr-4 file:py-2 file:px-3 file:rounded-none file:border file:border-line file:bg-panel file:text-text file:font-mono file:text-[10px] file:uppercase file:tracking-widest hover:file:border-accent transition"
         />
