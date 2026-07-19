@@ -1,6 +1,7 @@
 import { ProviderField } from "@/types";
 
-export const API_BASE = process.env.NEXT_PUBLIC_API_BASE_URL || "http://localhost:8000";
+// Use a relative base path so Next.js rewrites proxy requests to the backend.
+export const API_BASE = "/api";
 
 export async function fetchProviders(): Promise<any[]> {
   const res = await fetch(`${API_BASE}/api/config/providers`);

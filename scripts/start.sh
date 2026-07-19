@@ -9,4 +9,8 @@ export BACKEND_PORT=${BACKEND_PORT:-8000}
 mkdir -p /app/data/chroma_db
 mkdir -p /app/logs
 
+# Smoke-test backend imports so startup crashes are visible immediately.
+cd /app/backend
+/app/.venv/bin/python -c "from app.main import app; print('Backend imports OK')" 2>&1 | tee /app/logs/backend-smoke.log
+
 exec supervisord -c /app/config/supervisord.conf

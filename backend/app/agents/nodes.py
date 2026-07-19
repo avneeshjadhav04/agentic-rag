@@ -3,7 +3,7 @@ import json
 import re
 from typing import Optional
 
-from langchain.schema import Document
+from langchain_core.documents import Document
 from langchain_openai import ChatOpenAI, OpenAIEmbeddings
 
 from app.search.webfetch import fetch_url

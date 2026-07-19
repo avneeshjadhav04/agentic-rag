@@ -5,7 +5,7 @@ import tempfile
 from typing import List
 
 import requests
-from langchain.schema import Document
+from langchain_core.documents import Document
 from langchain_community.document_loaders import (
     PyPDFLoader,
     TextLoader,
