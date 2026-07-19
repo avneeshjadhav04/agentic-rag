@@ -9,7 +9,11 @@ import ChatMessages from "./ChatMessages";
 import ChatInput from "./ChatInput";
 import AgentTrace from "./AgentTrace";
 
-export default function Chat() {
+interface ChatProps {
+  sidebarOpen: boolean;
+}
+
+export default function Chat({ sidebarOpen }: ChatProps) {
   const { addMessage, appendToLastMessage, setLastMessageTrace, isStreaming, setStreaming } = useChatStore();
   const { chat, embedding, webSearchEnabled, temperature } = useConfigStore();
   const messages = useActiveMessages();
@@ -38,7 +42,7 @@ export default function Chat() {
 
   return (
     <div className="flex h-full flex-col">
-      <ChatHeader messageCount={messages.length} />
+      <ChatHeader messageCount={messages.length} sidebarOpen={sidebarOpen} />
       <ChatMessages messages={messages} isStreaming={isStreaming} onViewTrace={setActiveTrace} />
       <ChatInput onSend={sendMessage} disabled={isStreaming} />
       {activeTrace && <AgentTrace trace={activeTrace} onClose={() => setActiveTrace(null)} />}

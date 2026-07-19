@@ -20,7 +20,7 @@ export default function Home() {
             <PanelRightOpen className="w-5 h-5 text-primary" />
           </button>
         )}
-        <Chat />
+        <Chat sidebarOpen={sidebarOpen} />
       </main>
     </div>
   );

@@ -1,14 +1,16 @@
 "use client";
 
 import { Bot } from "lucide-react";
+import { cn } from "@/lib/cn";
 
 interface ChatHeaderProps {
   messageCount: number;
+  sidebarOpen: boolean;
 }
 
-export default function ChatHeader({ messageCount }: ChatHeaderProps) {
+export default function ChatHeader({ messageCount, sidebarOpen }: ChatHeaderProps) {
   return (
-    <div className="flex items-center gap-3 px-8 py-5 border-b border-border bg-surface">
+    <div className={cn("flex items-center gap-3 border-b border-border bg-surface", sidebarOpen ? "px-8" : "pl-20 pr-8")}>
       <div className="p-2 rounded-lg bg-primary/10">
         <Bot className="w-6 h-6 text-primary" />
       </div>
