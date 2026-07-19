@@ -14,13 +14,16 @@ export default function ChatMessages({ messages, isStreaming }: ChatMessagesProp
 
   useEffect(() => {
     if (!containerRef.current || messages.length === 0) return;
-    const userEls = containerRef.current.querySelectorAll('[data-role="user"]');
-    if (userEls.length > 0) {
+    requestAnimationFrame(() => {
+      if (!containerRef.current) return;
+      const userEls = containerRef.current.querySelectorAll('[data-role="user"]');
+      if (userEls.length === 0) return;
       const lastUser = userEls[userEls.length - 1] as HTMLElement;
+      const paddingTop = parseFloat(getComputedStyle(containerRef.current).paddingTop);
       const userTop = lastUser.getBoundingClientRect().top;
       const containerTop = containerRef.current.getBoundingClientRect().top;
-      containerRef.current.scrollTop += userTop - containerTop;
-    }
+      containerRef.current.scrollTop += userTop - containerTop - paddingTop;
+    });
   }, [messages.length]);
 
   if (messages.length === 0) {
