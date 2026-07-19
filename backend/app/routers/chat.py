@@ -1,4 +1,6 @@
 """Chat endpoints for the Agentic RAG backend."""
+import asyncio
+import json
 from typing import AsyncGenerator
 
 from fastapi import APIRouter, Form, Request
@@ -81,33 +83,33 @@ async def chat_stream(
     temperature: float = Form(default=0.7),
 ):
     async def event_generator() -> AsyncGenerator[str, None]:
-        graph = _build_graph(
-            chat_base_url, chat_model, chat_api_key,
-            embed_base_url, embed_model, embed_api_key,
-            temperature=temperature,
-        )
-        state: AgentState = {
-            "question": question,
-            "messages": [],
-            "documents": [],
-            "web_search_urls": [],
-            "generation": None,
-            "trace": [],
-            "steps": 0,
-            "web_search_enabled": web_search_enabled,
-            "max_loops": 3,
-        }
-        final_state = graph.invoke(state)
-        answer = final_state.get("generation", "")
-        trace = final_state.get("trace", [])
+        try:
+            graph = _build_graph(
+                chat_base_url, chat_model, chat_api_key,
+                embed_base_url, embed_model, embed_api_key,
+                temperature=temperature,
+            )
+            state: AgentState = {
+                "question": question,
+                "messages": [],
+                "documents": [],
+                "web_search_urls": [],
+                "generation": None,
+                "trace": [],
+                "steps": 0,
+                "web_search_enabled": web_search_enabled,
+                "max_loops": 3,
+            }
+            final_state = await asyncio.to_thread(graph.invoke, state)
+            answer = final_state.get("generation", "")
+            trace = final_state.get("trace", [])
 
-        # Stream the final answer word-by-word to mimic real-time generation.
-        words = answer.split(" ")
-        for i, word in enumerate(words):
-            payload = word if i == 0 else " " + word
-            yield f"data: {payload}\n\n"
-        # Final event carries the trace.
-        import json
-        yield f"event: done\ndata: {json.dumps({'trace': trace})}\n\n"
+            words = answer.split(" ")
+            for i, word in enumerate(words):
+                payload = word if i == 0 else " " + word
+                yield f"data: {payload}\n\n"
+            yield f"event: done\ndata: {json.dumps({'trace': trace})}\n\n"
+        except Exception as e:
+            yield f"event: error\ndata: {json.dumps({'message': str(e)})}\n\n"
 
     return StreamingResponse(event_generator(), media_type="text/event-stream")

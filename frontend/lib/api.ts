@@ -90,10 +90,14 @@ export async function* streamChat(
   form.append("web_search_enabled", String(webSearchEnabled));
   form.append("temperature", String(temperature));
 
+  const controller = new AbortController();
+  const timeout = setTimeout(() => controller.abort(), 60000);
   const res = await fetch(`${API_BASE}/api/chat/stream`, {
     method: "POST",
     body: form,
+    signal: controller.signal,
   });
+  clearTimeout(timeout);
   if (!res.ok) throw new Error("Chat request failed");
   if (!res.body) throw new Error("No response body");
 
@@ -120,6 +124,14 @@ export async function* streamChat(
             return parsed;
           } catch {
             return null;
+          }
+        }
+        if (currentEvent === "error") {
+          try {
+            const parsed = JSON.parse(data);
+            throw new Error(parsed.message || "Chat request failed");
+          } catch (e) {
+            throw e;
           }
         }
         yield data;
