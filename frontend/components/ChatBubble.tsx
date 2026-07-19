@@ -35,45 +35,51 @@ export default function ChatBubble({ message, isStreaming }: ChatBubbleProps) {
         <TraceChain trace={message.trace} live={isStreaming && !message.content} />
       )}
 
-      <div
-        className={cn(
-          "max-w-[680px] text-sm leading-relaxed",
-          isUser
-            ? "bg-accent text-background px-4 py-3"
-            : "bg-transparent border-l-2 border-line pl-4"
-        )}
-      >
-        <div>
-          {isUser ? (
-            <div className="whitespace-pre-wrap">{message.content}</div>
-          ) : (
-            <div className="prose prose-invert prose-sm max-w-none">
-              <ReactMarkdown remarkPlugins={[remarkGfm]}>
-                {message.content || (isStreaming ? "..." : "")}
-              </ReactMarkdown>
+      {isStreaming && !message.content && !isUser ? (
+        <span className="gradient-working font-mono text-[11px] uppercase tracking-widest">
+          Working
+        </span>
+      ) : (
+        <div
+          className={cn(
+            "max-w-[680px] text-sm leading-relaxed",
+            isUser
+              ? "bg-accent text-background px-4 py-3"
+              : "bg-transparent border-l-2 border-line pl-4"
+          )}
+        >
+          <div>
+            {isUser ? (
+              <div className="whitespace-pre-wrap">{message.content}</div>
+            ) : (
+              <div className="prose prose-invert prose-sm max-w-none">
+                <ReactMarkdown remarkPlugins={[remarkGfm]}>
+                  {message.content}
+                </ReactMarkdown>
+              </div>
+            )}
+          </div>
+
+          {!isUser && message.content && (
+            <div className="flex items-center gap-4 mt-3">
+              <button
+                onClick={copyContent}
+                className="flex items-center gap-1 font-mono text-[11px] uppercase tracking-widest text-muted hover:text-text transition"
+              >
+                {copied ? (
+                  <>
+                    <Check className="w-3 h-3" /> Copied
+                  </>
+                ) : (
+                  <>
+                    <Copy className="w-3 h-3" /> Copy
+                  </>
+                )}
+              </button>
             </div>
           )}
         </div>
-
-        {!isUser && message.content && (
-          <div className="flex items-center gap-4 mt-3">
-            <button
-              onClick={copyContent}
-              className="flex items-center gap-1 font-mono text-[11px] uppercase tracking-widest text-muted hover:text-text transition"
-            >
-              {copied ? (
-                <>
-                  <Check className="w-3 h-3" /> Copied
-                </>
-              ) : (
-                <>
-                  <Copy className="w-3 h-3" /> Copy
-                </>
-              )}
-            </button>
-          </div>
-        )}
-      </div>
+      )}
     </div>
   );
 }
