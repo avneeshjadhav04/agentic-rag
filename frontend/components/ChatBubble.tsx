@@ -35,7 +35,7 @@ export default function ChatBubble({ message, isStreaming }: ChatBubbleProps) {
         <TraceChain trace={message.trace} live={isStreaming && !message.content} />
       )}
 
-      {isStreaming && !message.content && !isUser ? (
+      {isStreaming && !message.content && !isUser && (!message.trace || message.trace.length === 0) ? (
         <span className="gradient-working font-mono text-[14px] uppercase tracking-widest">
           Working
         </span>
