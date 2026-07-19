@@ -9,4 +9,4 @@ export BACKEND_PORT=${BACKEND_PORT:-8000}
 mkdir -p /app/data/chroma_db
 mkdir -p /app/logs
 
-exec supervisord -c /app/supervisord.conf
+exec supervisord -c /app/config/supervisord.conf

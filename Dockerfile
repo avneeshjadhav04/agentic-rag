@@ -44,9 +44,9 @@ COPY frontend/package.json frontend/package-lock.json* ./frontend/
 RUN cd frontend && npm install --omit=dev
 
 # Copy startup and process manager configs.
-COPY start.sh ./start.sh
-COPY supervisord.conf ./supervisord.conf
-RUN chmod +x ./start.sh
+COPY scripts/start.sh ./scripts/start.sh
+COPY config/supervisord.conf ./config/supervisord.conf
+RUN chmod +x ./scripts/start.sh
 
 # Expose the single external port (PaaS usually provides $PORT).
 EXPOSE 3000
@@ -55,4 +55,4 @@ ENV BACKEND_PORT=8000
 ENV NEXT_PUBLIC_API_BASE_URL=http://localhost:8000
 ENV PORT=3000
 
-CMD ["./start.sh"]
+CMD ["./scripts/start.sh"]
