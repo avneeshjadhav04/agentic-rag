@@ -10,7 +10,7 @@ export default function WebFallbackToggle() {
       <div className="space-y-1">
         <p className="text-sm text-text">Web Fetch Fallback</p>
         <p className="font-mono text-[10px] uppercase tracking-widest text-muted">
-          Propose &amp; fetch URLs when docs are irrelevant
+          Search web when docs are irrelevant
         </p>
       </div>
       <button
