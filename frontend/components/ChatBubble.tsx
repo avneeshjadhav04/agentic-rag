@@ -2,6 +2,8 @@
 
 import { Bot, User, Activity, Copy, Check } from "lucide-react";
 import { useState } from "react";
+import ReactMarkdown from "react-markdown";
+import remarkGfm from "remark-gfm";
 import { ChatMessage } from "@/types";
 import { cn } from "@/lib/cn";
 
@@ -43,8 +45,16 @@ export default function ChatBubble({ message, isStreaming, onViewTrace }: ChatBu
           </span>
         </div>
 
-        <div className="whitespace-pre-wrap">
-          {message.content || (isStreaming ? "Thinking..." : "")}
+        <div>
+          {isUser ? (
+            <div className="whitespace-pre-wrap">{message.content}</div>
+          ) : (
+            <div className="prose prose-invert prose-sm max-w-none">
+              <ReactMarkdown remarkPlugins={[remarkGfm]}>
+                {message.content || (isStreaming ? "Thinking..." : "")}
+              </ReactMarkdown>
+            </div>
+          )}
         </div>
 
         {!isUser && message.content && (
