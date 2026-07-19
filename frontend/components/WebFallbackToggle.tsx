@@ -15,11 +15,18 @@ export default function WebFallbackToggle() {
       </div>
       <button
         onClick={() => setWebSearchEnabled(!webSearchEnabled)}
-        aria-pressed={webSearchEnabled}
-        className={`w-5 h-5 border transition ${
-          webSearchEnabled ? "bg-accent border-accent" : "bg-transparent border-line"
+        role="switch"
+        aria-checked={webSearchEnabled}
+        className={`relative inline-flex h-5 w-9 items-center rounded-full transition-colors ${
+          webSearchEnabled ? "bg-accent" : "bg-line"
         }`}
-      />
+      >
+        <span
+          className={`inline-block h-4 w-4 transform rounded-full bg-white transition-transform ${
+            webSearchEnabled ? "translate-x-[18px]" : "translate-x-[2px]"
+          }`}
+        />
+      </button>
     </section>
   );
 }
