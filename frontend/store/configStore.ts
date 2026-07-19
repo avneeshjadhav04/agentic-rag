@@ -32,7 +32,7 @@ export const useConfigStore = create<ConfigState>()(
         model: "nvidia/nemotron-3-embed-1b",
         apiKey: "",
       },
-      webSearchEnabled: false,
+      webSearchEnabled: true,
       temperature: 0.7,
       chunkSize: 1000,
       chunkOverlap: 200,
