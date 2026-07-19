@@ -38,13 +38,11 @@ const inputClass =
   "w-full bg-panel border border-line rounded-none px-3 py-2 text-sm text-text placeholder-muted transition";
 
 export default function ProviderConfig() {
-  const { chat, embedding, setChat, setEmbedding, setWebSearchEnabled, webSearchEnabled, temperature, setTemperature, chunkSize, chunkOverlap, setChunkSize, setChunkOverlap } =
+  const { chat, embedding, envChatApiKey, envEmbedApiKey, setChat, setEmbedding, setEnvChatApiKey, setEnvEmbedApiKey, setWebSearchEnabled, webSearchEnabled, temperature, setTemperature, chunkSize, chunkOverlap, setChunkSize, setChunkOverlap } =
     useConfigStore();
   const [presets, setPresets] = useState<ProviderPreset[]>(DEFAULT_PRESETS);
   const [showChatKey, setShowChatKey] = useState(false);
   const [showEmbedKey, setShowEmbedKey] = useState(false);
-  const [envChatApiKey, setEnvChatApiKey] = useState<string | null>(null);
-  const [envEmbedApiKey, setEnvEmbedApiKey] = useState<string | null>(null);
 
   useEffect(() => {
     fetchProviders()
@@ -55,8 +53,8 @@ export default function ProviderConfig() {
 
     fetchDefaults()
       .then((defaults) => {
-        setEnvChatApiKey(defaults.chat.apiKey || null);
-        setEnvEmbedApiKey(defaults.embedding.apiKey || null);
+        setEnvChatApiKey(defaults.chat.apiKey || "");
+        setEnvEmbedApiKey(defaults.embedding.apiKey || "");
 
         const state = useConfigStore.getState();
 
@@ -67,6 +65,7 @@ export default function ProviderConfig() {
         ): Partial<ProviderField> => {
           const updates: Partial<ProviderField> = {};
           for (const key of Object.keys(hardcoded) as (keyof ProviderField)[]) {
+            if (key === "apiKey") continue;
             if (current[key] === hardcoded[key] && env[key] !== undefined) {
               updates[key] = env[key];
             }
@@ -80,7 +79,7 @@ export default function ProviderConfig() {
         if (Object.keys(embedUpdates).length) setEmbedding(embedUpdates);
       })
       .catch(() => {});
-  }, [setChat, setEmbedding]);
+  }, [setChat, setEmbedding, setEnvChatApiKey, setEnvEmbedApiKey]);
 
   const applyChatPreset = (id: string) => {
     const preset = presets.find((p) => p.id === id);
@@ -135,7 +134,7 @@ export default function ProviderConfig() {
             type={showChatKey ? "text" : "password"}
             value={chat.apiKey}
             onChange={(e) => setChat({ apiKey: e.target.value })}
-            placeholder={envChatApiKey ? "Already set via env vars... paste new if needed" : "API Key"}
+            placeholder={envChatApiKey ? "Already set via env vars \u2014 paste new if needed" : "API Key"}
             className={`${inputClass} pr-8`}
           />
           <button
@@ -179,7 +178,7 @@ export default function ProviderConfig() {
             type={showEmbedKey ? "text" : "password"}
             value={embedding.apiKey}
             onChange={(e) => setEmbedding({ apiKey: e.target.value })}
-            placeholder={envEmbedApiKey ? "Already set via env vars... paste new if needed" : "API Key"}
+            placeholder={envEmbedApiKey ? "Already set via env vars \u2014 paste new if needed" : "API Key"}
             className={`${inputClass} pr-8`}
           />
           <button

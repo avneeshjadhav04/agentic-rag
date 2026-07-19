@@ -19,6 +19,8 @@ export const HARDCODED_EMBEDDING_DEFAULTS: ProviderField = {
 export interface ConfigState {
   chat: ProviderField;
   embedding: ProviderField;
+  envChatApiKey: string;
+  envEmbedApiKey: string;
   webSearchEnabled: boolean;
   temperature: number;
   chunkSize: number;
@@ -29,6 +31,8 @@ export interface ConfigState {
   setTemperature: (temp: number) => void;
   setChunkSize: (size: number) => void;
   setChunkOverlap: (overlap: number) => void;
+  setEnvChatApiKey: (key: string) => void;
+  setEnvEmbedApiKey: (key: string) => void;
 }
 
 export const useConfigStore = create<ConfigState>()(
@@ -36,6 +40,8 @@ export const useConfigStore = create<ConfigState>()(
     (set) => ({
       chat: { ...HARDCODED_CHAT_DEFAULTS },
       embedding: { ...HARDCODED_EMBEDDING_DEFAULTS },
+      envChatApiKey: "",
+      envEmbedApiKey: "",
       webSearchEnabled: true,
       temperature: 0.7,
       chunkSize: 1000,
@@ -43,6 +49,8 @@ export const useConfigStore = create<ConfigState>()(
       setChat: (chat) => set((state) => ({ chat: { ...state.chat, ...chat } })),
       setEmbedding: (embedding) =>
         set((state) => ({ embedding: { ...state.embedding, ...embedding } })),
+      setEnvChatApiKey: (key) => set({ envChatApiKey: key }),
+      setEnvEmbedApiKey: (key) => set({ envEmbedApiKey: key }),
       setWebSearchEnabled: (enabled) => set({ webSearchEnabled: enabled }),
       setTemperature: (temp) => set({ temperature: temp }),
       setChunkSize: (size) => set({ chunkSize: size }),
@@ -50,6 +58,7 @@ export const useConfigStore = create<ConfigState>()(
     }),
     {
       name: "config-storage",
+      partialize: ({ envChatApiKey, envEmbedApiKey, setEnvChatApiKey, setEnvEmbedApiKey, setChat, setEmbedding, setWebSearchEnabled, setTemperature, setChunkSize, setChunkOverlap, ...rest }) => rest,
     }
   )
 );

@@ -9,15 +9,17 @@ import ChatInput from "./ChatInput";
 
 export default function Chat() {
   const { messages, addMessage, appendToLastMessage, appendTraceStep, setLastMessageTrace, isStreaming, setStreaming } = useChatStore();
-  const { chat, embedding, webSearchEnabled, temperature } = useConfigStore();
+  const { chat, embedding, envChatApiKey, envEmbedApiKey, webSearchEnabled, temperature } = useConfigStore();
 
   const sendMessage = async (question: string) => {
+    const effectiveChat = { ...chat, apiKey: chat.apiKey || envChatApiKey };
+    const effectiveEmbedding = { ...embedding, apiKey: embedding.apiKey || envEmbedApiKey };
     addMessage({ role: "user", content: question });
     addMessage({ role: "assistant", content: "" });
     setStreaming(true);
 
     try {
-      const generator = streamChat(question, chat, embedding, webSearchEnabled, temperature);
+      const generator = streamChat(question, effectiveChat, effectiveEmbedding, webSearchEnabled, temperature);
       let result = await generator.next();
       while (!result.done) {
         const v = result.value;

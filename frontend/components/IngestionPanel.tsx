@@ -14,7 +14,8 @@ const btnOutline =
   "flex items-center justify-center gap-2 w-full px-4 py-2 rounded-none border border-line text-muted font-mono text-[11px] uppercase tracking-widest hover:border-accent hover:text-text transition disabled:opacity-40";
 
 export default function IngestionPanel() {
-  const { embedding, chunkSize, chunkOverlap } = useConfigStore();
+  const { embedding, envEmbedApiKey, chunkSize, chunkOverlap } = useConfigStore();
+  const effectiveEmbedding = { ...embedding, apiKey: embedding.apiKey || envEmbedApiKey };
   const [urls, setUrls] = useState("");
   const [files, setFiles] = useState<FileList | null>(null);
   const [filesLoading, setFilesLoading] = useState(false);
@@ -31,14 +32,14 @@ export default function IngestionPanel() {
   const refreshSources = useCallback(async () => {
     setLoadingSources(true);
     try {
-      const s = await listSources(embedding);
+      const s = await listSources(effectiveEmbedding);
       setSources(s);
     } catch {
       setSources([]);
     } finally {
       setLoadingSources(false);
     }
-  }, [embedding]);
+  }, [effectiveEmbedding]);
 
   useEffect(() => { refreshSources(); }, [refreshSources]);
 
@@ -53,7 +54,7 @@ export default function IngestionPanel() {
     setFilesLoading(true);
     setMessage("");
     try {
-      const res = await ingestFiles(files, embedding, chunkSize, chunkOverlap);
+      const res = await ingestFiles(files, effectiveEmbedding, chunkSize, chunkOverlap);
       const failed = (res.files || []).filter((f: any) => f.status === "error");
       const warned = (res.files || []).filter((f: any) => f.status === "warning");
       const msgs: string[] = [];
@@ -81,7 +82,7 @@ export default function IngestionPanel() {
     setUrlsLoading(true);
     setMessage("");
     try {
-      const res = await ingestUrls(urls, embedding, chunkSize, chunkOverlap);
+      const res = await ingestUrls(urls, effectiveEmbedding, chunkSize, chunkOverlap);
       setMessage(`Ingested ${res.ingested} chunks from ${res.url_count} URLs.`);
       setMessageType(res.ingested === 0 ? "warn" : "info");
       setUrls("");
@@ -98,7 +99,7 @@ export default function IngestionPanel() {
     setClearLoading(true);
     setMessage("");
     try {
-      await clearStore(embedding);
+      await clearStore(effectiveEmbedding);
       setMessage("Vector store cleared.");
       setMessageType("info");
     } catch (e: any) {
