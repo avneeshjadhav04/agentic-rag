@@ -59,6 +59,7 @@ export default function IngestionPanel() {
       setMessage(msg);
       setMessageType(failed.length ? "error" : warned.length || res.ingested === 0 ? "warn" : "info");
       setFiles(null);
+      refreshSources();
     } catch (e: any) {
       setMessage(e.message || "File ingestion failed");
       setMessageType("error");
@@ -76,6 +77,7 @@ export default function IngestionPanel() {
       setMessage(`Ingested ${res.ingested} chunks from ${res.url_count} URLs.`);
       setMessageType(res.ingested === 0 ? "warn" : "info");
       setUrls("");
+      refreshSources();
     } catch (e: any) {
       setMessage(e.message || "URL ingestion failed");
       setMessageType("error");
