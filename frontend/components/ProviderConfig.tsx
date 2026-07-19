@@ -38,7 +38,7 @@ const inputClass =
   "w-full bg-panel border border-line rounded-none px-3 py-2 text-sm text-text placeholder-muted transition";
 
 export default function ProviderConfig() {
-  const { chat, embedding, setChat, setEmbedding, setWebSearchEnabled, webSearchEnabled, temperature, setTemperature } =
+  const { chat, embedding, setChat, setEmbedding, setWebSearchEnabled, webSearchEnabled, temperature, setTemperature, chunkSize, chunkOverlap, setChunkSize, setChunkOverlap } =
     useConfigStore();
   const [presets, setPresets] = useState<ProviderPreset[]>(DEFAULT_PRESETS);
   const [showChatKey, setShowChatKey] = useState(false);
@@ -178,6 +178,31 @@ export default function ProviderConfig() {
           onChange={(e) => setTemperature(parseFloat(e.target.value))}
           className="w-full accent-accent"
         />
+      </section>
+
+      {/* Chunk settings */}
+      <section className="space-y-2">
+        <p className={labelClass}>Chunk Settings</p>
+        <div className="grid grid-cols-2 gap-3">
+          <div className="space-y-1.5">
+            <label className={labelClass}>Chunk Size</label>
+            <input
+              type="number"
+              value={chunkSize}
+              onChange={(e) => setChunkSize(parseInt(e.target.value) || 1000)}
+              className={inputClass}
+            />
+          </div>
+          <div className="space-y-1.5">
+            <label className={labelClass}>Overlap</label>
+            <input
+              type="number"
+              value={chunkOverlap}
+              onChange={(e) => setChunkOverlap(parseInt(e.target.value) || 200)}
+              className={inputClass}
+            />
+          </div>
+        </div>
       </section>
     </div>
   );

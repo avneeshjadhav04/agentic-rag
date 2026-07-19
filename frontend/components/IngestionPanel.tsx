@@ -14,7 +14,7 @@ const btnOutline =
   "flex items-center justify-center gap-2 w-full px-4 py-2 rounded-none border border-line text-muted font-mono text-[11px] uppercase tracking-widest hover:border-accent hover:text-text transition disabled:opacity-40";
 
 export default function IngestionPanel() {
-  const { embedding, chunkSize, chunkOverlap, setChunkSize, setChunkOverlap } = useConfigStore();
+  const { embedding, chunkSize, chunkOverlap } = useConfigStore();
   const [urls, setUrls] = useState("");
   const [files, setFiles] = useState<FileList | null>(null);
   const [loading, setLoading] = useState(false);
@@ -105,28 +105,6 @@ export default function IngestionPanel() {
 
   return (
     <div className="space-y-8">
-      {/* Chunk settings */}
-      <div className="grid grid-cols-2 gap-3">
-        <div className="space-y-1.5">
-          <label className={labelClass}>Chunk Size</label>
-          <input
-            type="number"
-            value={chunkSize}
-            onChange={(e) => setChunkSize(parseInt(e.target.value) || 1000)}
-            className={inputClass}
-          />
-        </div>
-        <div className="space-y-1.5">
-          <label className={labelClass}>Overlap</label>
-          <input
-            type="number"
-            value={chunkOverlap}
-            onChange={(e) => setChunkOverlap(parseInt(e.target.value) || 200)}
-            className={inputClass}
-          />
-        </div>
-      </div>
-
       {/* File upload */}
       <section className="space-y-3">
         <p className={labelClass}>Upload Files</p>
