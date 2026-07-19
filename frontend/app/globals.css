@@ -97,7 +97,7 @@ button:focus {
 }
 
 .gradient-working {
-  background: linear-gradient(90deg, #6e6e6e 0%, #8a8a8a 50%, #6e6e6e 100%);
+  background: linear-gradient(90deg, #444444 0%, #e8e8e8 50%, #444444 100%);
   background-size: 200% 100%;
   -webkit-background-clip: text;
   -webkit-text-fill-color: transparent;
