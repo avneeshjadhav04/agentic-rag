@@ -3,15 +3,11 @@
 import { useState } from "react";
 import {
   PanelRightClose,
-  MessageSquarePlus,
-  Trash2,
   ChevronDown,
   ChevronRight,
   Settings,
   FileUp,
-  History,
 } from "lucide-react";
-import { useChatStore } from "@/store/chatStore";
 import { cn } from "@/lib/cn";
 import ProviderConfig from "./ProviderConfig";
 import IngestionPanel from "./IngestionPanel";
@@ -22,16 +18,10 @@ interface SidebarProps {
 }
 
 export default function Sidebar({ open, onToggle }: SidebarProps) {
-  const { conversations, activeConversationId, newChat, switchConversation, deleteConversation } = useChatStore();
-  const [sections, setSections] = useState({ conversations: true, config: true, ingestion: true });
+  const [sections, setSections] = useState({ config: true, ingestion: true });
 
   const toggleSection = (key: keyof typeof sections) =>
     setSections((prev) => ({ ...prev, [key]: !prev[key] }));
-
-  const formatDate = (ts: number) => {
-    const d = new Date(ts);
-    return d.toLocaleDateString(undefined, { month: "short", day: "numeric", hour: "2-digit", minute: "2-digit" });
-  };
 
   return (
     <aside
@@ -54,62 +44,6 @@ export default function Sidebar({ open, onToggle }: SidebarProps) {
       </div>
 
       <div className="flex-1 overflow-y-auto p-4 space-y-4">
-        {/* Conversations */}
-        <div>
-          <button
-            onClick={() => toggleSection("conversations")}
-            className="flex items-center gap-2 w-full text-left text-sm font-semibold text-muted hover:text-text transition py-2"
-          >
-            {sections.conversations ? (
-              <ChevronDown className="w-4 h-4" />
-            ) : (
-              <ChevronRight className="w-4 h-4" />
-            )}
-            <History className="w-4 h-4" />
-            Conversations
-          </button>
-          {sections.conversations && (
-            <div className="mt-2 space-y-1">
-              <button
-                onClick={newChat}
-                className="flex items-center gap-2 w-full px-3 py-2 text-sm text-text hover:bg-panel rounded-lg transition"
-              >
-                <MessageSquarePlus className="w-4 h-4 text-primary" />
-                New Chat
-              </button>
-              {conversations.length === 0 && (
-                <p className="px-3 py-2 text-xs text-muted">No conversations yet</p>
-              )}
-              {conversations.map((conv) => (
-                <div
-                  key={conv.id}
-                  onClick={() => switchConversation(conv.id)}
-                  className={cn(
-                    "flex items-center gap-2 px-3 py-2 rounded-lg cursor-pointer transition group",
-                    conv.id === activeConversationId
-                      ? "bg-panel border border-border"
-                      : "hover:bg-panel"
-                  )}
-                >
-                  <div className="flex-1 min-w-0">
-                    <p className="text-sm text-text truncate">{conv.title}</p>
-                    <p className="text-xs text-muted">{formatDate(conv.createdAt)}</p>
-                  </div>
-                  <button
-                    onClick={(e) => {
-                      e.stopPropagation();
-                      deleteConversation(conv.id);
-                    }}
-                    className="opacity-0 group-hover:opacity-100 p-1 hover:text-red-400 transition"
-                  >
-                    <Trash2 className="w-3.5 h-3.5" />
-                  </button>
-                </div>
-              ))}
-            </div>
-          )}
-        </div>
-
         {/* Configuration */}
         <div>
           <button

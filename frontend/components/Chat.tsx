@@ -1,7 +1,7 @@
 "use client";
 
 import { useState } from "react";
-import { useChatStore, useActiveMessages } from "@/store/chatStore";
+import { useChatStore } from "@/store/chatStore";
 import { useConfigStore } from "@/store/configStore";
 import { streamChat } from "@/lib/api";
 import ChatHeader from "./ChatHeader";
@@ -10,9 +10,8 @@ import ChatInput from "./ChatInput";
 import AgentTrace from "./AgentTrace";
 
 export default function Chat() {
-  const { addMessage, appendToLastMessage, setLastMessageTrace, isStreaming, setStreaming } = useChatStore();
+  const { messages, addMessage, appendToLastMessage, setLastMessageTrace, isStreaming, setStreaming } = useChatStore();
   const { chat, embedding, webSearchEnabled, temperature } = useConfigStore();
-  const messages = useActiveMessages();
   const [activeTrace, setActiveTrace] = useState<any[] | null>(null);
 
   const sendMessage = async (question: string) => {

@@ -28,10 +28,3 @@ export interface ChatMessage {
   content: string;
   trace?: TraceStep[];
 }
-
-export interface Conversation {
-  id: string;
-  title: string;
-  messages: ChatMessage[];
-  createdAt: number;
-}
