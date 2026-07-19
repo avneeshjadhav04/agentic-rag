@@ -1,7 +1,7 @@
 """Ingestion endpoints for files and URLs."""
 from typing import List
 
-from fastapi import APIRouter, File, Form, UploadFile
+from fastapi import APIRouter, File, Form, HTTPException, UploadFile
 
 from app.ingestion.chunker import chunk_documents
 from app.ingestion.loader import load_files, load_urls
@@ -67,3 +67,26 @@ async def clear_store(
     store = _build_store(embed_base_url, embed_model, embed_api_key)
     store.clear()
     return {"cleared": True}
+
+
+@router.post("/check")
+async def check_store(
+    embed_base_url: str = Form(...),
+    embed_model: str = Form(...),
+    embed_api_key: str = Form(default=""),
+    query: str = Form(default="test"),
+):
+    store = _build_store(embed_base_url, embed_model, embed_api_key)
+    try:
+        doc_count = store._get_store()._collection.count()
+        sample = store.similarity_search(query, k=3)
+        return {
+            "doc_count": doc_count,
+            "sample_count": len(sample),
+            "sample": [
+                {"text": d.page_content[:200], "source": d.metadata.get("source", "")}
+                for d in sample
+            ],
+        }
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))

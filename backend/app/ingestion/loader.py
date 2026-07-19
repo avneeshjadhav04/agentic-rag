@@ -5,6 +5,7 @@ from typing import List, Tuple
 
 from langchain_core.documents import Document
 from langchain_community.document_loaders import (
+    Docx2txtLoader,
     PyPDFLoader,
     TextLoader,
 )
@@ -27,6 +28,8 @@ def load_files(entries: List[Tuple[str, bytes]]) -> tuple[List[Document], list[d
                 tmp_path = tmp.name
             if suffix == ".pdf":
                 loader = PyPDFLoader(tmp_path)
+            elif suffix in (".docx", ".doc"):
+                loader = Docx2txtLoader(tmp_path)
             else:
                 loader = TextLoader(tmp_path, encoding="utf-8", autodetect_encoding=True)
             loaded = loader.load()
@@ -55,6 +58,12 @@ def load_urls(urls: List[str]) -> List[Document]:
             docs = loader.load()
             documents.extend(docs)
         except Exception:
-            # Best-effort: skip URLs that fail to load.
             continue
     return documents
+
+
+SUPPORTED_EXTENSIONS = {".pdf", ".txt", ".md", ".markdown", ".docx", ".doc", ".csv", ".json", ".xml", ".html", ".htm"}
+
+
+def get_supported_extensions() -> set[str]:
+    return SUPPORTED_EXTENSIONS

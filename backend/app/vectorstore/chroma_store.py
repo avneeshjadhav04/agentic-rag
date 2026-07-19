@@ -31,6 +31,7 @@ class ChromaStore:
             return
         store = self._get_store()
         store.add_documents(documents)
+        store.persist()
 
     def similarity_search(self, query: str, k: int = 4) -> List[Document]:
         store = self._get_store()
