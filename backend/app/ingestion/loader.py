@@ -33,6 +33,9 @@ def load_files(entries: List[Tuple[str, bytes]]) -> tuple[List[Document], list[d
             else:
                 loader = TextLoader(tmp_path, encoding="utf-8", autodetect_encoding=True)
             loaded = loader.load()
+            if loaded and all(not d.page_content.strip() for d in loaded):
+                results.append({"file": original_name, "chunks": 0, "status": "warning", "error": "File loaded but all pages have empty text (scanned document or binary format)"})
+                continue
             documents.extend(loaded)
             results.append({"file": original_name, "chunks": len(loaded), "status": "ok"})
         except Exception as e:

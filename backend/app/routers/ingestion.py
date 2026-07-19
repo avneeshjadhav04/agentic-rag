@@ -90,3 +90,22 @@ async def check_store(
         }
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
+
+
+@router.post("/debug-file")
+async def debug_file(
+    file: UploadFile = File(...),
+):
+    """Upload a single file and inspect what load_files extracts (no Chroma write)."""
+    content = await file.read()
+    from app.ingestion.chunker import chunk_documents
+    documents, results = load_files([(file.filename or "uploaded", content)])
+    if documents:
+        chunks = chunk_documents(documents)
+        return {
+            "results": results,
+            "doc_count": len(documents),
+            "chunk_count": len(chunks),
+            "first_doc_preview": documents[0].page_content[:500],
+        }
+    return {"results": results, "doc_count": 0, "chunk_count": 0, "first_doc_preview": None}

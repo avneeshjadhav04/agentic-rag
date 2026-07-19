@@ -11,6 +11,7 @@ export default function IngestionPanel() {
   const [files, setFiles] = useState<FileList | null>(null);
   const [loading, setLoading] = useState(false);
   const [message, setMessage] = useState("");
+  const [messageType, setMessageType] = useState<"info" | "warn" | "error">("info");
 
   const handleFiles = async () => {
     if (!files || files.length === 0) return;
@@ -19,13 +20,20 @@ export default function IngestionPanel() {
     try {
       const res = await ingestFiles(files, embedding, chunkSize, chunkOverlap);
       const failed = (res.files || []).filter((f: any) => f.status === "error");
-      const msg = failed.length
-        ? `Ingested ${res.ingested} chunks (${failed.length} file(s) failed: ${failed.map((f: any) => f.file).join(", ")})`
+      const warned = (res.files || []).filter((f: any) => f.status === "warning");
+      const msgs: string[] = [];
+      if (failed.length) msgs.push(`${failed.length} file(s) failed`);
+      if (warned.length) msgs.push(`${warned.length} file(s) had no extractable text (scanned?)`);
+      const hasIssues = failed.length || warned.length || res.ingested === 0;
+      const msg = hasIssues
+        ? `Ingested ${res.ingested} chunks (${msgs.join("; ") || "0 chunks"})`
         : `Ingested ${res.ingested} chunks from ${files.length} files.`;
       setMessage(msg);
+      setMessageType(failed.length ? "error" : warned.length || res.ingested === 0 ? "warn" : "info");
       setFiles(null);
     } catch (e: any) {
       setMessage(e.message || "File ingestion failed");
+      setMessageType("error");
     } finally {
       setLoading(false);
     }
@@ -38,9 +46,11 @@ export default function IngestionPanel() {
     try {
       const res = await ingestUrls(urls, embedding, chunkSize, chunkOverlap);
       setMessage(`Ingested ${res.ingested} chunks from ${res.url_count} URLs.`);
+      setMessageType(res.ingested === 0 ? "warn" : "info");
       setUrls("");
     } catch (e: any) {
       setMessage(e.message || "URL ingestion failed");
+      setMessageType("error");
     } finally {
       setLoading(false);
     }
@@ -54,6 +64,7 @@ export default function IngestionPanel() {
       setMessage("Vector store cleared.");
     } catch (e: any) {
       setMessage(e.message || "Failed to clear store");
+      setMessageType("error");
     } finally {
       setLoading(false);
     }
@@ -137,7 +148,7 @@ export default function IngestionPanel() {
       </button>
 
       {message && (
-        <p className="text-xs text-primary">{message}</p>
+        <p className={`text-xs ${messageType === "error" ? "text-red-400" : messageType === "warn" ? "text-orange-400" : "text-primary"}`}>{message}</p>
       )}
     </div>
   );
