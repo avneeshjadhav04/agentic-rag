@@ -14,6 +14,7 @@ const config: Config = {
         line: "#242424",
         muted: "#6e6e6e",
         accent: "#ff5a1f",
+        success: "#22c55e",
         text: {
           DEFAULT: "#e8e8e8",
           muted: "#6e6e6e",

@@ -32,29 +32,28 @@ function TraceRow({ step, detail, status, isLast }: { step: string; detail?: Tra
       <button
         onClick={() => hasDetail && setExpanded(!expanded)}
         className={cn(
-          "w-full flex items-center gap-3 px-4 py-3 text-left",
+          "w-full flex items-center gap-2 px-4 py-3 text-left",
           !hasDetail && "cursor-default"
         )}
       >
-        {status === "done" && (
-          <span className="font-mono text-[10px] text-muted">--</span>
-        )}
-        {status === "running" && (
-          <span className="font-mono text-[10px] text-accent animate-pulse">--</span>
-        )}
-        {status === "pending" && (
-          <span className="font-mono text-[10px] text-muted/40">--</span>
-        )}
-        <span className="font-mono text-[11px] uppercase tracking-widest text-text">
+        <span className={cn(
+          "font-mono text-[11px] uppercase tracking-widest",
+          status === "running" ? "text-accent" : "text-text"
+        )}>
           {label}
         </span>
-        {status === "running" && (
-          <span className="font-mono text-[10px] uppercase tracking-widest text-accent ml-auto animate-pulse">
-            Running
-          </span>
+
+        {status === "done" && (
+          <span className="font-mono text-[11px] leading-none text-success">✓</span>
         )}
+        {status === "running" && (
+          <span className="inline-block w-3 h-3 border border-accent border-t-transparent rounded-full animate-spin flex-shrink-0" />
+        )}
+
+        <div className="flex-1" />
+
         {hasDetail && (
-          <span className="font-mono text-[10px] text-muted ml-auto">
+          <span className="font-mono text-[10px] text-muted">
             {expanded ? "[-]" : "[+]"}
           </span>
         )}
@@ -72,8 +71,6 @@ function TraceRow({ step, detail, status, isLast }: { step: string; detail?: Tra
 
 export default function TraceChain({ trace, live }: TraceChainProps) {
   if (!trace || trace.length === 0) return null;
-
-  const doneSteps = new Set(trace.map((t) => t.step));
 
   return (
     <div className="w-full max-w-[680px] mb-5 border border-line">
