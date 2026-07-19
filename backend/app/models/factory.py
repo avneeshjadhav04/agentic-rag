@@ -1,6 +1,7 @@
 """Provider-agnostic factories for chat LLMs and embedding models."""
 from typing import List, Optional
 
+from openai import OpenAI
 from langchain_openai import ChatOpenAI, OpenAIEmbeddings
 
 
@@ -26,10 +27,17 @@ def get_chat_llm(
 class NvidiaEmbeddings(OpenAIEmbeddings):
     """Override to send input as string — NVIDIA NIM rejects arrays."""
 
+    def __init__(self, **kwargs):
+        super().__init__(**kwargs)
+        self._nvidia_client = OpenAI(
+            api_key=self.api_key,
+            base_url=self.base_url,
+        )
+
     def embed_documents(self, texts: List[str]) -> List[List[float]]:
         responses = []
         for text in texts:
-            data = self.client.embeddings.create(
+            data = self._nvidia_client.embeddings.create(
                 input=text,
                 model=self.model,
             )
@@ -37,7 +45,7 @@ class NvidiaEmbeddings(OpenAIEmbeddings):
         return responses
 
     def embed_query(self, text: str) -> List[float]:
-        data = self.client.embeddings.create(
+        data = self._nvidia_client.embeddings.create(
             input=text,
             model=self.model,
         )
