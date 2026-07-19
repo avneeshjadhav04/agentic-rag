@@ -41,6 +41,12 @@ export default function IngestionPanel() {
 
   useEffect(() => { refreshSources(); }, [refreshSources]);
 
+  useEffect(() => {
+    if (!message) return;
+    const timer = setTimeout(() => setMessage(""), 10000);
+    return () => clearTimeout(timer);
+  }, [message]);
+
   const handleFiles = async () => {
     if (!files || files.length === 0) return;
     setFilesLoading(true);
