@@ -25,6 +25,7 @@ export default function Chat() {
           appendToLastMessage(v.value as string);
         } else if (v.type === "trace") {
           appendTraceStep(v.value);
+          await new Promise(r => setTimeout(r, 16));
         }
         result = await generator.next();
       }

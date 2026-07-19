@@ -13,7 +13,11 @@ from .state import AgentState
 
 
 def _add_trace(state: AgentState, step: str, detail: dict) -> None:
-    state["trace"].append({"step": step, **detail})
+    entry = {"step": step, **detail}
+    state["trace"].append(entry)
+    buf = state.get("_trace_buffer")
+    if buf is not None:
+        buf.append(entry)
 
 
 def _llm_json_invoke(llm: ChatOpenAI, prompt: str, fallback: dict) -> dict:

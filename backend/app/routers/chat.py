@@ -1,4 +1,5 @@
 """Chat endpoints for the Agentic RAG backend."""
+import asyncio
 import json
 from typing import AsyncGenerator
 
@@ -50,6 +51,7 @@ async def chat_stream(
                 embed_base_url, embed_model, embed_api_key,
                 temperature=temperature,
             )
+            trace_buffer: list[dict] = []
             state: AgentState = {
                 "question": question,
                 "messages": [],
@@ -57,19 +59,23 @@ async def chat_stream(
                 "web_search_urls": [],
                 "generation": None,
                 "trace": [],
+                "_trace_buffer": trace_buffer,
                 "steps": 0,
                 "web_search_enabled": web_search_enabled,
                 "max_loops": 3,
             }
-            seen = 0
-            final_state = state
-            async for chunk in graph.astream(state, stream_mode="values"):
-                final_state = chunk
-                trace = chunk.get("trace", [])
-                while seen < len(trace):
-                    yield f"event: trace\ndata: {json.dumps(trace[seen])}\n\n"
-                    seen += 1
 
+            task = asyncio.create_task(asyncio.to_thread(graph.invoke, state))
+
+            while not task.done():
+                while trace_buffer:
+                    yield f"event: trace\ndata: {json.dumps(trace_buffer.pop(0))}\n\n"
+                await asyncio.sleep(0.05)
+
+            while trace_buffer:
+                yield f"event: trace\ndata: {json.dumps(trace_buffer.pop(0))}\n\n"
+
+            final_state = task.result()
             answer = final_state.get("generation", "")
             words = answer.split(" ")
             for i, word in enumerate(words):
