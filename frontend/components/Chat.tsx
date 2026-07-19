@@ -41,7 +41,7 @@ export default function Chat() {
 
   return (
     <div className="flex h-full flex-col">
-      <ChatHeader messageCount={messages.length} />
+      <ChatHeader />
       <ChatMessages messages={messages} isStreaming={isStreaming} />
       <ChatInput onSend={sendMessage} disabled={isStreaming} />
     </div>
