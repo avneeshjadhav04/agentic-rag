@@ -36,19 +36,19 @@ function TraceRow({ step, detail, status, isLast }: { step: string; detail?: Tra
           !hasDetail && "cursor-default"
         )}
       >
-        <span className={cn(
-          "font-mono text-[11px] uppercase tracking-widest",
-          status === "running" ? "text-accent" : "text-text"
-        )}>
-          {label}
-        </span>
-
         {status === "done" && (
           <span className="font-mono text-[11px] leading-none text-success">✓</span>
         )}
         {status === "running" && (
           <span className="inline-block w-3 h-3 border border-accent border-t-transparent rounded-full animate-spin flex-shrink-0" />
         )}
+
+        <span className={cn(
+          "font-mono text-[11px] uppercase tracking-widest",
+          status === "running" ? "text-accent" : "text-text"
+        )}>
+          {label}
+        </span>
 
         <div className="flex-1" />
 
