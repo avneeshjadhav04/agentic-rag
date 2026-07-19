@@ -55,7 +55,10 @@ export async function ingestUrls(
     method: "POST",
     body: form,
   });
-  if (!res.ok) throw new Error("URL ingestion failed");
+  if (!res.ok) {
+    const body = await res.text().catch(() => "");
+    throw new Error(`URL ingestion failed (${res.status}): ${body.slice(0, 200)}`);
+  }
   return res.json();
 }
 

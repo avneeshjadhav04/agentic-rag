@@ -31,7 +31,10 @@ class ChromaStore:
             return
         store = self._get_store()
         store.add_documents(documents)
-        store.persist()
+        try:
+            store.persist()
+        except (NotImplementedError, AttributeError):
+            print("ChromaDB>=0.5 auto-persists; skipping explicit persist().")
 
     def similarity_search(self, query: str, k: int = 4) -> List[Document]:
         store = self._get_store()
