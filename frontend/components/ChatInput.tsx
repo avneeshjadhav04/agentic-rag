@@ -1,7 +1,7 @@
 "use client";
 
 import { useState } from "react";
-import { Send } from "lucide-react";
+import { ArrowUp } from "lucide-react";
 import { cn } from "@/lib/cn";
 
 interface ChatInputProps {
@@ -43,9 +43,9 @@ export default function ChatInput({ onSend, disabled }: ChatInputProps) {
         <button
           onClick={handleSend}
           disabled={disabled || !input.trim()}
-          className="flex items-center justify-center px-5 border-l border-line bg-accent text-background hover:bg-accent/80 transition disabled:opacity-40"
+          className="flex items-center justify-center rounded-full w-10 h-10 mr-3 bg-accent text-background hover:bg-accent/80 transition disabled:opacity-40"
         >
-          <Send className="w-4 h-4" />
+          <ArrowUp className="w-4 h-4" />
         </button>
       </div>
     </div>
