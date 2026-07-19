@@ -17,12 +17,12 @@ export default function WebFallbackToggle() {
         onClick={() => setWebSearchEnabled(!webSearchEnabled)}
         role="switch"
         aria-checked={webSearchEnabled}
-        className={`relative inline-flex h-5 w-9 items-center rounded-full transition-colors ${
-          webSearchEnabled ? "bg-accent" : "bg-line"
+        className={`relative inline-flex h-5 w-9 items-center rounded-sm border transition-colors ${
+          webSearchEnabled ? "bg-accent border-accent" : "bg-transparent border-line"
         }`}
       >
         <span
-          className={`inline-block h-4 w-4 transform rounded-full bg-white transition-transform ${
+          className={`inline-block h-3.5 w-3.5 transform rounded-sm bg-white transition-transform ${
             webSearchEnabled ? "translate-x-[18px]" : "translate-x-[2px]"
           }`}
         />
