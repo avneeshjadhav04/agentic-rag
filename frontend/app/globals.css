@@ -96,6 +96,26 @@ button:focus {
   100% { background-position: 0% 50%; }
 }
 
+/* Range slider — square thumb */
+input[type="range"]::-webkit-slider-thumb {
+  -webkit-appearance: none;
+  width: 14px;
+  height: 14px;
+  background: var(--accent);
+  border: none;
+  border-radius: 2px;
+  cursor: pointer;
+}
+
+input[type="range"]::-moz-range-thumb {
+  width: 14px;
+  height: 14px;
+  background: var(--accent);
+  border: none;
+  border-radius: 2px;
+  cursor: pointer;
+}
+
 .gradient-working {
   background: linear-gradient(90deg, #444444 0%, #e8e8e8 50%, #444444 100%);
   background-size: 200% 100%;
