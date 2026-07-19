@@ -35,6 +35,7 @@ export default function ChatInput({ onSend, disabled }: ChatInputProps) {
           }}
           rows={2}
           placeholder="Ask anything..."
+          disabled={disabled}
           className={cn(inputClass, disabled && "opacity-50")}
         />
         <button

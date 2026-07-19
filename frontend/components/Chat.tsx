@@ -22,12 +22,15 @@ export default function Chat() {
 
     try {
       const generator = streamChat(question, chat, embedding, webSearchEnabled, temperature);
-      for await (const token of generator) {
-        if (typeof token === "string") {
-          appendToLastMessage(token);
-        } else if (token && typeof token === "object" && "trace" in token) {
-          setLastMessageTrace((token as { trace?: any[] }).trace || []);
+      let result = await generator.next();
+      while (!result.done) {
+        if (typeof result.value === "string") {
+          appendToLastMessage(result.value);
         }
+        result = await generator.next();
+      }
+      if (result.value && "trace" in result.value) {
+        setLastMessageTrace(result.value.trace || []);
       }
     } catch (e: any) {
       appendToLastMessage("\n\nError: " + (e.message || "Chat request failed"));

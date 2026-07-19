@@ -70,9 +70,10 @@ export const useChatStore = create<ChatState>()(
 
           const conv = state.conversations[idx];
           const messages = [...conv.messages];
-          const last = messages[messages.length - 1];
-          if (last && last.role === "assistant") {
+          if (messages.length > 0 && messages[messages.length - 1].role === "assistant") {
+            const last = { ...messages[messages.length - 1] };
             last.content += content;
+            messages[messages.length - 1] = last;
           } else {
             messages.push({ role: "assistant", content });
           }
@@ -93,9 +94,10 @@ export const useChatStore = create<ChatState>()(
 
           const conv = state.conversations[idx];
           const messages = [...conv.messages];
-          const last = messages[messages.length - 1];
-          if (last && last.role === "assistant") {
+          if (messages.length > 0 && messages[messages.length - 1].role === "assistant") {
+            const last = { ...messages[messages.length - 1] };
             last.trace = trace;
+            messages[messages.length - 1] = last;
           }
 
           const newConversations = state.conversations.map((c, i) =>
