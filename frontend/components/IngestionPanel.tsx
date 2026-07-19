@@ -126,7 +126,7 @@ export default function IngestionPanel() {
         <textarea
           value={urls}
           onChange={(e) => setUrls(e.target.value)}
-          rows={4}
+          rows={2}
           placeholder="https://example.com/article&#10;https://..."
           className={inputClass}
         />
@@ -135,11 +135,6 @@ export default function IngestionPanel() {
           Ingest URLs
         </button>
       </section>
-
-      {/* Clear store */}
-      <button onClick={handleClear} disabled={loading} className={btnOutline}>
-        Clear Vector Store
-      </button>
 
       {/* Stored Sources */}
       <div className="border border-line bg-panel overflow-hidden">
@@ -174,6 +169,11 @@ export default function IngestionPanel() {
           </div>
         )}
       </div>
+
+      {/* Clear store */}
+      <button onClick={handleClear} disabled={loading} className={btnOutline}>
+        Clear Vector Store
+      </button>
 
       {message && (
         <p className={`font-mono text-[11px] uppercase tracking-widest ${statusClass}`}>
