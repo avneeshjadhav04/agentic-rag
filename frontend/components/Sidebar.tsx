@@ -31,7 +31,7 @@ export default function Sidebar() {
       <div className="px-8 py-6 border-b border-line">
         <h1 className="text-2xl font-semibold tracking-tighter text-text">Agentic RAG</h1>
         <p className="font-mono text-[11px] uppercase tracking-widest text-muted mt-1">
-          Multi-agent retrieval
+          Multi-agent retrieval system
         </p>
       </div>
 
