@@ -1,6 +1,6 @@
 # Multi-stage build for a single-container Agentic RAG deployment.
 # Stage 1: Build Next.js frontend.
-FROM node:20-slim AS frontend-builder
+FROM node:22-slim-trixie AS frontend-builder
 
 WORKDIR /app/frontend
 COPY frontend/package.json frontend/package-lock.json* ./
@@ -9,15 +9,17 @@ COPY frontend/ ./
 ENV NEXT_PUBLIC_API_BASE_URL=http://localhost:8000
 RUN npm run build
 
-# Stage 2: Python backend runtime + frontend static bundle.
-FROM python:3.12-slim
+# Stage 2: Pure Debian Trixie runtime with Python 3.13 + Node.js 22 LTS.
+FROM debian:trixie-slim
 
 WORKDIR /app
 
-# Install system dependencies for document processing and node runtime.
+# Install system dependencies for document processing, runtime, and build tools.
 RUN apt-get update && apt-get install -y --no-install-recommends \
-    build-essential \
     curl \
+    ca-certificates \
+    gnupg \
+    build-essential \
     libxml2-dev \
     libxslt1-dev \
     libssl-dev \
@@ -25,14 +27,20 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     libjpeg-dev \
     zlib1g-dev \
     poppler-utils \
-    nodejs \
-    npm \
     supervisor \
+    python3.13 \
+    python3-pip \
+    python3.13-venv \
     && rm -rf /var/lib/apt/lists/*
+
+# Install Node.js 22 LTS via NodeSource.
+RUN curl -fsSL https://deb.nodesource.com/setup_22.x | bash - && \
+    apt-get install -y --no-install-recommends nodejs && \
+    rm -rf /var/lib/apt/lists/*
 
 # Install Python dependencies.
 COPY backend/requirements.txt ./backend/requirements.txt
-RUN pip install --no-cache-dir -r backend/requirements.txt
+RUN pip3 install --break-system-packages --no-cache-dir -r backend/requirements.txt
 
 # Copy backend code.
 COPY backend/ ./backend
