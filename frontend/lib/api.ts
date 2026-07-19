@@ -98,7 +98,10 @@ export async function* streamChat(
     signal: controller.signal,
   });
   clearTimeout(timeout);
-  if (!res.ok) throw new Error("Chat request failed");
+  if (!res.ok) {
+    const body = await res.text().catch(() => "");
+    throw new Error(`Chat request failed (${res.status}): ${body.slice(0, 200)}`);
+  }
   if (!res.body) throw new Error("No response body");
 
   const reader = res.body.getReader();
