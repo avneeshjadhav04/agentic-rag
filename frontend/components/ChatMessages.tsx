@@ -17,7 +17,9 @@ export default function ChatMessages({ messages, isStreaming }: ChatMessagesProp
     const userEls = containerRef.current.querySelectorAll('[data-role="user"]');
     if (userEls.length > 0) {
       const lastUser = userEls[userEls.length - 1] as HTMLElement;
-      lastUser.scrollIntoView({ block: "start" });
+      const userTop = lastUser.getBoundingClientRect().top;
+      const containerTop = containerRef.current.getBoundingClientRect().top;
+      containerRef.current.scrollTop += userTop - containerTop;
     }
   }, [messages.length]);
 
