@@ -1,6 +1,5 @@
 "use client";
 
-import { Bot } from "lucide-react";
 import { ChatMessage } from "@/types";
 import ChatBubble from "./ChatBubble";
 
@@ -13,16 +12,17 @@ interface ChatMessagesProps {
 export default function ChatMessages({ messages, isStreaming, onViewTrace }: ChatMessagesProps) {
   if (messages.length === 0) {
     return (
-      <div className="flex-1 flex flex-col items-center justify-center text-muted px-8">
-        <Bot className="w-12 h-12 mb-4 opacity-30" />
-        <p className="text-lg">Start a conversation</p>
-        <p className="text-sm">Ingest documents or ask a question directly.</p>
+      <div className="flex-1 flex flex-col items-center justify-center px-8">
+        <p className="text-2xl font-mono tracking-tighter text-text">READY</p>
+        <p className="font-mono text-[11px] uppercase tracking-widest text-muted mt-3">
+          Ingest documents or ask a question directly.
+        </p>
       </div>
     );
   }
 
   return (
-    <div className="flex-1 overflow-y-auto px-8 py-6 space-y-6">
+    <div className="flex-1 overflow-y-auto px-8 py-8 space-y-8">
       {messages.map((msg, idx) => (
         <ChatBubble
           key={idx}

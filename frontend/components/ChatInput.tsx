@@ -18,12 +18,14 @@ export default function ChatInput({ onSend, disabled }: ChatInputProps) {
     setInput("");
   };
 
-  const inputClass =
-    "flex-1 bg-panel border border-border rounded-xl px-4 py-3 text-sm text-text placeholder-muted focus:border-primary transition resize-none";
-
   return (
-    <div className="px-8 py-5 border-t border-border bg-surface">
-      <div className="flex gap-3">
+    <div className="px-8 py-5 border-t border-line">
+      <div
+        className={cn(
+          "flex border border-line bg-panel",
+          disabled && "opacity-40"
+        )}
+      >
         <textarea
           value={input}
           onChange={(e) => setInput(e.target.value)}
@@ -36,14 +38,14 @@ export default function ChatInput({ onSend, disabled }: ChatInputProps) {
           rows={2}
           placeholder="Ask anything..."
           disabled={disabled}
-          className={cn(inputClass, disabled && "opacity-50")}
+          className="flex-1 bg-transparent px-4 py-3 text-sm text-text placeholder-muted resize-none focus:outline-none"
         />
         <button
           onClick={handleSend}
           disabled={disabled || !input.trim()}
-          className="px-5 py-3 rounded-xl bg-primary text-white hover:bg-primary-dark transition disabled:opacity-50"
+          className="flex items-center justify-center px-5 border-l border-line bg-accent text-background hover:bg-accent/80 transition disabled:opacity-40"
         >
-          <Send className="w-5 h-5" />
+          <Send className="w-4 h-4" />
         </button>
       </div>
     </div>

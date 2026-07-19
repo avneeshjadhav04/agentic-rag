@@ -1,6 +1,6 @@
 "use client";
 
-import { Bot, User, Activity, Copy, Check } from "lucide-react";
+import { Copy, Check } from "lucide-react";
 import { useState } from "react";
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
@@ -23,57 +23,50 @@ export default function ChatBubble({ message, isStreaming, onViewTrace }: ChatBu
   };
 
   const isUser = message.role === "user";
+  const roleLabel = isUser ? "You" : "Agent";
 
   return (
-    <div className={cn("flex gap-4", isUser ? "justify-end" : "justify-start")}>
+    <div className={cn("flex flex-col", isUser ? "items-end" : "items-start")}>
+      <span className="font-mono text-[10px] uppercase tracking-widest text-muted mb-2">
+        {roleLabel}
+      </span>
       <div
         className={cn(
-          "max-w-[80%] rounded-2xl px-5 py-4 text-sm leading-relaxed",
+          "max-w-[680px] text-sm leading-relaxed",
           isUser
-            ? "bg-primary text-white rounded-br-none"
-            : "bg-surface border border-border text-text rounded-bl-none"
+            ? "bg-accent text-background px-4 py-3"
+            : "bg-transparent border-l-2 border-line pl-4"
         )}
       >
-        <div className="flex items-center gap-2 mb-2">
-          {isUser ? (
-            <User className="w-4 h-4" />
-          ) : (
-            <Bot className="w-4 h-4 text-primary" />
-          )}
-          <span className="text-xs font-medium opacity-80">
-            {isUser ? "You" : "Agent"}
-          </span>
-        </div>
-
         <div>
           {isUser ? (
             <div className="whitespace-pre-wrap">{message.content}</div>
           ) : (
             <div className="prose prose-invert prose-sm max-w-none">
               <ReactMarkdown remarkPlugins={[remarkGfm]}>
-                {message.content || (isStreaming ? "Thinking..." : "")}
+                {message.content || (isStreaming ? "..." : "")}
               </ReactMarkdown>
             </div>
           )}
         </div>
 
         {!isUser && message.content && (
-          <div className="flex items-center gap-3 mt-3">
+          <div className="flex items-center gap-4 mt-3">
             {message.trace && message.trace.length > 0 && (
               <button
                 onClick={() => onViewTrace(message.trace || [])}
-                className="flex items-center gap-1 text-xs text-primary hover:text-primary-light transition"
+                className="font-mono text-[11px] uppercase tracking-widest text-muted hover:text-text transition"
               >
-                <Activity className="w-3 h-3" /> View agent trace
+                View agent trace
               </button>
             )}
             <button
               onClick={copyContent}
-              className="flex items-center gap-1 text-xs text-muted hover:text-text transition"
+              className="flex items-center gap-1 font-mono text-[11px] uppercase tracking-widest text-muted hover:text-text transition"
             >
               {copied ? (
                 <>
-                  <Check className="w-3 h-3 text-green-400" /> Copied
+                  <Check className="w-3 h-3" /> Copied
                 </>
               ) : (
                 <>

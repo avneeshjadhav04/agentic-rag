@@ -1,12 +1,7 @@
 "use client";
 
 import { useState } from "react";
-import {
-  ChevronDown,
-  ChevronRight,
-  Settings,
-  FileUp,
-} from "lucide-react";
+import { Plus, Minus } from "lucide-react";
 import ProviderConfig from "./ProviderConfig";
 import IngestionPanel from "./IngestionPanel";
 
@@ -16,30 +11,35 @@ export default function Sidebar() {
   const toggleSection = (key: keyof typeof sections) =>
     setSections((prev) => ({ ...prev, [key]: !prev[key] }));
 
+  const sectionButton = (key: keyof typeof sections, num: string, label: string) => (
+    <button
+      onClick={() => toggleSection(key)}
+      className="flex items-center justify-between w-full text-left font-mono text-[11px] uppercase tracking-widest text-muted hover:text-text transition py-2"
+    >
+      <span>
+        <span className="text-text">{num}</span>
+        <span className="mx-2">/</span>
+        <span>{label}</span>
+      </span>
+      {sections[key] ? <Minus className="w-3.5 h-3.5" /> : <Plus className="w-3.5 h-3.5" />}
+    </button>
+  );
+
   return (
-    <aside className="flex-shrink-0 flex flex-col border-r border-border bg-surface w-96">
-      <div className="p-6 border-b border-border">
-        <h1 className="text-2xl font-bold text-primary truncate">Agentic RAG</h1>
-        <p className="text-xs text-muted">Multi-agent retrieval system</p>
+    <aside className="flex-shrink-0 flex flex-col border-r border-line bg-surface w-96">
+      <div className="px-8 py-6 border-b border-line">
+        <h1 className="text-2xl font-semibold tracking-tighter text-text">Agentic RAG</h1>
+        <p className="font-mono text-[11px] uppercase tracking-widest text-muted mt-1">
+          Multi-agent retrieval
+        </p>
       </div>
 
-      <div className="flex-1 overflow-y-auto p-4 space-y-4">
+      <div className="flex-1 overflow-y-auto px-8 py-8 space-y-8">
         {/* Configuration */}
         <div>
-          <button
-            onClick={() => toggleSection("config")}
-            className="flex items-center gap-2 w-full text-left text-sm font-semibold text-muted hover:text-text transition py-2"
-          >
-            {sections.config ? (
-              <ChevronDown className="w-4 h-4" />
-            ) : (
-              <ChevronRight className="w-4 h-4" />
-            )}
-            <Settings className="w-4 h-4" />
-            Configuration
-          </button>
+          {sectionButton("config", "01", "Configuration")}
           {sections.config && (
-            <div className="mt-2">
+            <div className="mt-4">
               <ProviderConfig />
             </div>
           )}
@@ -47,20 +47,9 @@ export default function Sidebar() {
 
         {/* Ingestion */}
         <div>
-          <button
-            onClick={() => toggleSection("ingestion")}
-            className="flex items-center gap-2 w-full text-left text-sm font-semibold text-muted hover:text-text transition py-2"
-          >
-            {sections.ingestion ? (
-              <ChevronDown className="w-4 h-4" />
-            ) : (
-              <ChevronRight className="w-4 h-4" />
-            )}
-            <FileUp className="w-4 h-4" />
-            Ingestion
-          </button>
+          {sectionButton("ingestion", "02", "Ingestion")}
           {sections.ingestion && (
-            <div className="mt-2">
+            <div className="mt-4">
               <IngestionPanel />
             </div>
           )}

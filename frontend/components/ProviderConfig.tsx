@@ -4,7 +4,7 @@ import { useConfigStore } from "@/store/configStore";
 import { ProviderPreset } from "@/types";
 import { fetchProviders } from "@/lib/api";
 import { useEffect, useState } from "react";
-import { Eye, EyeOff, Settings } from "lucide-react";
+import { Eye, EyeOff } from "lucide-react";
 
 const DEFAULT_PRESETS: ProviderPreset[] = [
   {
@@ -32,6 +32,10 @@ const DEFAULT_PRESETS: ProviderPreset[] = [
     embeddings: { base_url: "", default_model: "" },
   },
 ];
+
+const labelClass = "font-mono text-[10px] uppercase tracking-widest text-muted";
+const inputClass =
+  "w-full bg-panel border border-line rounded-none px-3 py-2 text-sm text-text placeholder-muted transition";
 
 export default function ProviderConfig() {
   const { chat, embedding, setChat, setEmbedding, setWebSearchEnabled, webSearchEnabled, temperature, setTemperature } =
@@ -70,19 +74,11 @@ export default function ProviderConfig() {
     });
   };
 
-  const inputClass =
-    "w-full bg-panel border border-border rounded-lg px-3 py-2 text-sm text-text placeholder-muted focus:border-primary transition";
-
   return (
-    <div className="space-y-6">
-      <div className="flex items-center gap-2 text-primary">
-        <Settings className="w-5 h-5" />
-        <h2 className="text-lg font-semibold">Configuration</h2>
-      </div>
-
+    <div className="space-y-8">
       {/* Chat provider */}
       <section className="space-y-3">
-        <p className="text-sm font-medium text-text">Chat Provider</p>
+        <p className={labelClass}>Chat Provider</p>
         <select
           value={chat.provider}
           onChange={(e) => applyChatPreset(e.target.value)}
@@ -117,7 +113,7 @@ export default function ProviderConfig() {
           <button
             type="button"
             onClick={() => setShowChatKey(!showChatKey)}
-            className="absolute right-2 top-1/2 -translate-y-1/2 text-muted hover:text-primary"
+            className="absolute right-2 top-1/2 -translate-y-1/2 text-muted hover:text-text"
           >
             {showChatKey ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
           </button>
@@ -126,7 +122,7 @@ export default function ProviderConfig() {
 
       {/* Embedding provider */}
       <section className="space-y-3">
-        <p className="text-sm font-medium text-text">Embedding Provider</p>
+        <p className={labelClass}>Embedding Provider</p>
         <select
           value={embedding.provider}
           onChange={(e) => applyEmbedPreset(e.target.value)}
@@ -161,7 +157,7 @@ export default function ProviderConfig() {
           <button
             type="button"
             onClick={() => setShowEmbedKey(!showEmbedKey)}
-            className="absolute right-2 top-1/2 -translate-y-1/2 text-muted hover:text-primary"
+            className="absolute right-2 top-1/2 -translate-y-1/2 text-muted hover:text-text"
           >
             {showEmbedKey ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
           </button>
@@ -171,26 +167,25 @@ export default function ProviderConfig() {
       {/* Fallback toggle */}
       <section className="flex items-center justify-between">
         <div className="space-y-1">
-          <p className="text-sm font-medium text-text">Web Fetch Fallback</p>
-          <p className="text-xs text-muted">Propose &amp; fetch URLs when docs are irrelevant</p>
+          <p className="text-sm text-text">Web Fetch Fallback</p>
+          <p className="font-mono text-[10px] uppercase tracking-widest text-muted">
+            Propose &amp; fetch URLs when docs are irrelevant
+          </p>
         </div>
         <button
           onClick={() => setWebSearchEnabled(!webSearchEnabled)}
-          className={`relative w-11 h-6 rounded-full transition ${
-            webSearchEnabled ? "bg-primary" : "bg-border"
+          aria-pressed={webSearchEnabled}
+          className={`w-5 h-5 border transition ${
+            webSearchEnabled ? "bg-accent border-accent" : "bg-transparent border-line"
           }`}
-        >
-          <span
-            className={`absolute top-1 left-1 w-4 h-4 bg-white rounded-full transition-transform ${
-              webSearchEnabled ? "translate-x-5" : ""
-            }`}
-          />
-        </button>
+        />
       </section>
 
       {/* Temperature */}
       <section className="space-y-2">
-        <p className="text-sm font-medium text-text">Temperature: {temperature}</p>
+        <p className={labelClass}>
+          Temperature <span className="text-text">{temperature}</span>
+        </p>
         <input
           type="range"
           min={0}
@@ -198,7 +193,7 @@ export default function ProviderConfig() {
           step={0.1}
           value={temperature}
           onChange={(e) => setTemperature(parseFloat(e.target.value))}
-          className="w-full accent-primary"
+          className="w-full accent-accent"
         />
       </section>
     </div>
