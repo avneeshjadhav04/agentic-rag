@@ -51,6 +51,8 @@ async def chat_stream(
                 embed_base_url, embed_model, embed_api_key,
                 temperature=temperature,
             )
+            from app.agents.nodes import set_trace_buffer, clear_trace_buffer
+
             trace_buffer: list[dict] = []
             state: AgentState = {
                 "question": question,
@@ -59,13 +61,19 @@ async def chat_stream(
                 "web_search_urls": [],
                 "generation": None,
                 "trace": [],
-                "_trace_buffer": trace_buffer,
                 "steps": 0,
                 "web_search_enabled": web_search_enabled,
                 "max_loops": 3,
             }
 
-            task = asyncio.create_task(asyncio.to_thread(graph.invoke, state))
+            def run_graph():
+                set_trace_buffer(trace_buffer)
+                try:
+                    return graph.invoke(state)
+                finally:
+                    clear_trace_buffer()
+
+            task = asyncio.create_task(asyncio.to_thread(run_graph))
 
             while not task.done():
                 while trace_buffer:

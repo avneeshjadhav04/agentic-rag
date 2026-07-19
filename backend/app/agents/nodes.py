@@ -1,6 +1,7 @@
 """LangGraph agent nodes for the Agentic RAG workflow."""
 import json
 import re
+import threading
 from typing import Optional
 
 from langchain_core.documents import Document
@@ -11,11 +12,25 @@ from app.vectorstore.chroma_store import ChromaStore
 
 from .state import AgentState
 
+_trace_buffers: dict[int, list[dict]] = {}
+_trace_buffers_lock = threading.Lock()
+
+
+def set_trace_buffer(buf: list[dict]) -> None:
+    with _trace_buffers_lock:
+        _trace_buffers[threading.get_ident()] = buf
+
+
+def clear_trace_buffer() -> None:
+    with _trace_buffers_lock:
+        _trace_buffers.pop(threading.get_ident(), None)
+
 
 def _add_trace(state: AgentState, step: str, detail: dict) -> None:
     entry = {"step": step, **detail}
     state["trace"].append(entry)
-    buf = state.get("_trace_buffer")
+    with _trace_buffers_lock:
+        buf = _trace_buffers.get(threading.get_ident())
     if buf is not None:
         buf.append(entry)
 
