@@ -5,6 +5,8 @@ import { useState } from "react";
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
 import remarkBreaks from "remark-breaks";
+import { Prism as SyntaxHighlighter } from "react-syntax-highlighter";
+import { oneDark } from "react-syntax-highlighter/dist/esm/styles/prism";
 import { ChatMessage } from "@/types";
 import { cn } from "@/lib/cn";
 import TraceChain from "./TraceChain";
@@ -52,9 +54,31 @@ export default function ChatBubble({ message, isStreaming }: ChatBubbleProps) {
           <div>
             {isUser ? (
               <div className="whitespace-pre-wrap">{message.content}</div>
+            ) : isStreaming ? (
+              <div className="whitespace-pre-wrap">{message.content}</div>
             ) : (
               <div className="prose prose-invert prose-sm max-w-none">
-                <ReactMarkdown remarkPlugins={[remarkGfm, remarkBreaks]}>
+                <ReactMarkdown
+                  remarkPlugins={[remarkGfm, remarkBreaks]}
+                  components={{
+                    code({ className, children, ...props }) {
+                      const match = /language-(\w+)/.exec(className || "");
+                      return match ? (
+                        <SyntaxHighlighter
+                          style={oneDark}
+                          language={match[1]}
+                          PreTag="div"
+                        >
+                          {String(children).replace(/\n$/, "")}
+                        </SyntaxHighlighter>
+                      ) : (
+                        <code className={className} {...props}>
+                          {children}
+                        </code>
+                      );
+                    },
+                  }}
+                >
                   {message.content}
                 </ReactMarkdown>
               </div>
