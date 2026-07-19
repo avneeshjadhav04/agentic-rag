@@ -176,6 +176,7 @@ export default function ProviderConfig() {
           step={0.1}
           value={temperature}
           onChange={(e) => setTemperature(parseFloat(e.target.value))}
+          style={{ '--pct': `${temperature * 100}%` } as React.CSSProperties}
           className="w-full"
         />
       </section>
