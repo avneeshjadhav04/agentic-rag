@@ -1,7 +1,7 @@
 """Ingestion endpoints for files and URLs."""
 from typing import List
 
-from fastapi import APIRouter, File, Form, HTTPException, UploadFile
+from fastapi import APIRouter, File, Form, UploadFile
 
 from app.ingestion.chunker import chunk_documents
 from app.ingestion.loader import load_files, load_urls
@@ -69,43 +69,19 @@ async def clear_store(
     return {"cleared": True}
 
 
-@router.post("/check")
-async def check_store(
+@router.post("/list")
+async def list_sources(
     embed_base_url: str = Form(...),
     embed_model: str = Form(...),
     embed_api_key: str = Form(default=""),
-    query: str = Form(default="test"),
 ):
     store = _build_store(embed_base_url, embed_model, embed_api_key)
     try:
-        doc_count = store._get_store()._collection.count()
-        sample = store.similarity_search(query, k=3)
-        return {
-            "doc_count": doc_count,
-            "sample_count": len(sample),
-            "sample": [
-                {"text": d.page_content[:200], "source": d.metadata.get("source", "")}
-                for d in sample
-            ],
-        }
+        all_data = store._get_store()._collection.get(include=["metadatas"])
+        sources = sorted({
+            m["source"] for m in all_data["metadatas"]
+            if m and m.get("source")
+        })
+        return {"sources": sources, "total": len(sources)}
     except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
-
-
-@router.post("/debug-file")
-async def debug_file(
-    file: UploadFile = File(...),
-):
-    """Upload a single file and inspect what load_files extracts (no Chroma write)."""
-    content = await file.read()
-    from app.ingestion.chunker import chunk_documents
-    documents, results = load_files([(file.filename or "uploaded", content)])
-    if documents:
-        chunks = chunk_documents(documents)
-        return {
-            "results": results,
-            "doc_count": len(documents),
-            "chunk_count": len(chunks),
-            "first_doc_preview": documents[0].page_content[:500],
-        }
-    return {"results": results, "doc_count": 0, "chunk_count": 0, "first_doc_preview": None}
+        return {"sources": [], "total": 0, "error": str(e)}

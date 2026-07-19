@@ -37,6 +37,8 @@ def load_files(entries: List[Tuple[str, bytes]]) -> tuple[List[Document], list[d
                 results.append({"file": original_name, "chunks": 0, "status": "warning", "error": "File loaded but all pages have empty text (scanned document or binary format)"})
                 continue
             documents.extend(loaded)
+            for doc in loaded:
+                doc.metadata["source"] = original_name
             results.append({"file": original_name, "chunks": len(loaded), "status": "ok"})
         except Exception as e:
             results.append({"file": original_name, "chunks": 0, "status": "error", "error": repr(e)[:200]})
@@ -59,14 +61,9 @@ def load_urls(urls: List[str]) -> List[Document]:
         try:
             loader = WebBaseLoader(url)
             docs = loader.load()
+            for doc in docs:
+                doc.metadata["source"] = url
             documents.extend(docs)
         except Exception:
             continue
     return documents
-
-
-SUPPORTED_EXTENSIONS = {".pdf", ".txt", ".md", ".markdown", ".docx", ".doc", ".csv", ".json", ".xml", ".html", ".htm"}
-
-
-def get_supported_extensions() -> set[str]:
-    return SUPPORTED_EXTENSIONS

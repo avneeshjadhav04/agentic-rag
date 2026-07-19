@@ -1,9 +1,9 @@
 "use client";
 
 import { useConfigStore } from "@/store/configStore";
-import { clearStore, ingestFiles, ingestUrls } from "@/lib/api";
-import { useState } from "react";
-import { FileUp, Link2, Trash2, Loader2 } from "lucide-react";
+import { clearStore, ingestFiles, ingestUrls, listSources } from "@/lib/api";
+import { useState, useEffect, useCallback } from "react";
+import { FileUp, Link2, Trash2, Loader2, Database, RefreshCw, ChevronDown, ChevronRight } from "lucide-react";
 
 export default function IngestionPanel() {
   const { embedding, chunkSize, chunkOverlap, setChunkSize, setChunkOverlap } = useConfigStore();
@@ -12,6 +12,23 @@ export default function IngestionPanel() {
   const [loading, setLoading] = useState(false);
   const [message, setMessage] = useState("");
   const [messageType, setMessageType] = useState<"info" | "warn" | "error">("info");
+  const [sources, setSources] = useState<string[]>([]);
+  const [loadingSources, setLoadingSources] = useState(false);
+  const [sourcesExpanded, setSourcesExpanded] = useState(false);
+
+  const refreshSources = useCallback(async () => {
+    setLoadingSources(true);
+    try {
+      const s = await listSources(embedding);
+      setSources(s);
+    } catch {
+      setSources([]);
+    } finally {
+      setLoadingSources(false);
+    }
+  }, [embedding]);
+
+  useEffect(() => { refreshSources(); }, [refreshSources]);
 
   const handleFiles = async () => {
     if (!files || files.length === 0) return;
@@ -146,6 +163,41 @@ export default function IngestionPanel() {
       >
         <Trash2 className="w-4 h-4" /> Clear Vector Store
       </button>
+
+      {/* Stored Sources */}
+      <div className="rounded-xl border border-border bg-panel overflow-hidden">
+        <button
+          onClick={() => setSourcesExpanded(!sourcesExpanded)}
+          className="flex items-center justify-between w-full px-4 py-3 text-sm text-text hover:bg-surface transition"
+        >
+          <div className="flex items-center gap-2">
+            <Database className="w-4 h-4 text-primary" />
+            <span className="font-medium">Stored Sources</span>
+            <span className="text-xs text-muted">({sources.length})</span>
+          </div>
+          <div className="flex items-center gap-2">
+            <button
+              onClick={(e) => { e.stopPropagation(); refreshSources(); }}
+              disabled={loadingSources}
+              className="p-1 rounded hover:bg-border text-muted hover:text-text"
+            >
+              <RefreshCw className={`w-3.5 h-3.5 ${loadingSources ? "animate-spin" : ""}`} />
+            </button>
+            {sourcesExpanded ? <ChevronDown className="w-4 h-4 text-muted" /> : <ChevronRight className="w-4 h-4 text-muted" />}
+          </div>
+        </button>
+        {sourcesExpanded && (
+          <div className="px-4 pb-3 max-h-40 overflow-y-auto space-y-1">
+            {sources.length === 0 ? (
+              <p className="text-xs text-muted italic">No sources stored yet.</p>
+            ) : (
+              sources.map((s, i) => (
+                <p key={i} className="text-xs text-text truncate" title={s}>{s}</p>
+              ))
+            )}
+          </div>
+        )}
+      </div>
 
       {message && (
         <p className={`text-xs ${messageType === "error" ? "text-red-400" : messageType === "warn" ? "text-orange-400" : "text-primary"}`}>{message}</p>

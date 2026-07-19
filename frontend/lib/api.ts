@@ -73,6 +73,21 @@ export async function clearStore(embedding: ProviderField): Promise<any> {
   return res.json();
 }
 
+export async function listSources(embedding: ProviderField): Promise<string[]> {
+  const form = new FormData();
+  form.append("embed_base_url", embedding.baseUrl);
+  form.append("embed_model", embedding.model);
+  form.append("embed_api_key", embedding.apiKey);
+
+  const res = await fetch(`${API_BASE}/api/ingest/list`, {
+    method: "POST",
+    body: form,
+  });
+  if (!res.ok) return [];
+  const data = await res.json();
+  return data.sources || [];
+}
+
 export async function* streamChat(
   question: string,
   chat: ProviderField,
