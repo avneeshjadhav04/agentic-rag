@@ -1,0 +1,16 @@
+fastapi
+uvicorn[standard]
+pydantic
+python-multipart
+langchain
+langchain-community
+langchain-openai
+langchain-chroma
+chromadb
+pypdf
+beautifulsoup4
+requests
+lxml
+aiohttp
+httpx
+python-dotenv
