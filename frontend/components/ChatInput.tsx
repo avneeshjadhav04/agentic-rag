@@ -22,7 +22,7 @@ export default function ChatInput({ onSend, disabled }: ChatInputProps) {
     <div className="px-8 py-5 border-t border-line">
       <div
         className={cn(
-          "flex items-center border border-line bg-panel",
+          "mx-auto max-w-2xl flex items-center border border-line bg-panel",
           disabled && "opacity-40"
         )}
       >
