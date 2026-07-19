@@ -28,11 +28,10 @@ class NvidiaEmbeddings(OpenAIEmbeddings):
     """Override to send input as string — NVIDIA NIM rejects arrays."""
 
     def __init__(self, **kwargs):
+        api_key = kwargs.get("api_key") or kwargs.get("openai_api_key") or "dummy"
+        base_url = kwargs.get("base_url") or kwargs.get("openai_api_base") or ""
         super().__init__(**kwargs)
-        self._nvidia_client = OpenAI(
-            api_key=self.api_key,
-            base_url=self.base_url,
-        )
+        self._nvidia_client = OpenAI(api_key=api_key, base_url=base_url)
 
     def embed_documents(self, texts: List[str]) -> List[List[float]]:
         responses = []
