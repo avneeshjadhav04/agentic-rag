@@ -1,6 +1,6 @@
 "use client";
 
-import { useRef, useEffect } from "react";
+import { useRef, useLayoutEffect } from "react";
 import { ChatMessage } from "@/types";
 import ChatBubble from "./ChatBubble";
 
@@ -11,19 +11,14 @@ interface ChatMessagesProps {
 
 export default function ChatMessages({ messages, isStreaming }: ChatMessagesProps) {
   const containerRef = useRef<HTMLDivElement>(null);
+  const latestUserRef = useRef<HTMLDivElement>(null);
 
-  useEffect(() => {
-    if (!containerRef.current || messages.length === 0) return;
-    requestAnimationFrame(() => {
-      if (!containerRef.current) return;
-      const userEls = containerRef.current.querySelectorAll('[data-role="user"]');
-      if (userEls.length === 0) return;
-      const lastUser = userEls[userEls.length - 1] as HTMLElement;
-      const paddingTop = parseFloat(getComputedStyle(containerRef.current).paddingTop);
-      const userTop = lastUser.getBoundingClientRect().top;
-      const containerTop = containerRef.current.getBoundingClientRect().top;
-      containerRef.current.scrollTop += userTop - containerTop - paddingTop;
-    });
+  useLayoutEffect(() => {
+    const container = containerRef.current;
+    const userEl = latestUserRef.current;
+    if (!container || !userEl) return;
+    const paddingTop = parseFloat(getComputedStyle(container).paddingTop);
+    container.scrollTop = userEl.offsetTop - container.offsetTop - paddingTop;
   }, [messages.length]);
 
   if (messages.length === 0) {
@@ -40,14 +35,17 @@ export default function ChatMessages({ messages, isStreaming }: ChatMessagesProp
   return (
     <div ref={containerRef} className="flex-1 overflow-y-auto px-8 py-8">
       <div className="mx-auto max-w-[680px] space-y-8">
-        {messages.map((msg, idx) => (
-          <div key={idx} data-role={msg.role}>
-            <ChatBubble
-              message={msg}
-              isStreaming={isStreaming && idx === messages.length - 1}
-            />
-          </div>
-        ))}
+        {messages.map((msg, idx) => {
+          const isLatestUser = msg.role === "user" && idx === messages.length - 1 - (messages[messages.length - 1]?.role === "assistant" ? 1 : 0);
+          return (
+            <div key={idx} ref={isLatestUser ? latestUserRef : undefined}>
+              <ChatBubble
+                message={msg}
+                isStreaming={isStreaming && idx === messages.length - 1}
+              />
+            </div>
+          );
+        })}
       </div>
     </div>
   );
