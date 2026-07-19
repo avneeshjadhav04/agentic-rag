@@ -17,7 +17,10 @@ export default function IngestionPanel() {
   const { embedding, chunkSize, chunkOverlap } = useConfigStore();
   const [urls, setUrls] = useState("");
   const [files, setFiles] = useState<FileList | null>(null);
-  const [loading, setLoading] = useState(false);
+  const [filesLoading, setFilesLoading] = useState(false);
+  const [urlsLoading, setUrlsLoading] = useState(false);
+  const [clearLoading, setClearLoading] = useState(false);
+  const loading = filesLoading || urlsLoading || clearLoading;
   const [message, setMessage] = useState("");
   const [messageType, setMessageType] = useState<"info" | "warn" | "error">("info");
   const [sources, setSources] = useState<string[]>([]);
@@ -40,7 +43,7 @@ export default function IngestionPanel() {
 
   const handleFiles = async () => {
     if (!files || files.length === 0) return;
-    setLoading(true);
+    setFilesLoading(true);
     setMessage("");
     try {
       const res = await ingestFiles(files, embedding, chunkSize, chunkOverlap);
@@ -60,13 +63,13 @@ export default function IngestionPanel() {
       setMessage(e.message || "File ingestion failed");
       setMessageType("error");
     } finally {
-      setLoading(false);
+      setFilesLoading(false);
     }
   };
 
   const handleUrls = async () => {
     if (!urls.trim()) return;
-    setLoading(true);
+    setUrlsLoading(true);
     setMessage("");
     try {
       const res = await ingestUrls(urls, embedding, chunkSize, chunkOverlap);
@@ -77,12 +80,12 @@ export default function IngestionPanel() {
       setMessage(e.message || "URL ingestion failed");
       setMessageType("error");
     } finally {
-      setLoading(false);
+      setUrlsLoading(false);
     }
   };
 
   const handleClear = async () => {
-    setLoading(true);
+    setClearLoading(true);
     setMessage("");
     try {
       await clearStore(embedding);
@@ -92,7 +95,7 @@ export default function IngestionPanel() {
       setMessage(e.message || "Failed to clear store");
       setMessageType("error");
     } finally {
-      setLoading(false);
+      setClearLoading(false);
     }
   };
 
@@ -114,8 +117,8 @@ export default function IngestionPanel() {
           onChange={(e) => setFiles(e.target.files)}
           className="block w-full text-xs text-muted file:mr-4 file:py-2 file:px-3 file:rounded-none file:border file:border-line file:bg-panel file:text-text file:font-mono file:text-[10px] file:uppercase file:tracking-widest hover:file:border-accent transition"
         />
-        <button onClick={handleFiles} disabled={loading || !files} className={btnPrimary}>
-          {loading && <Loader2 className="w-3.5 h-3.5 animate-spin" />}
+        <button onClick={handleFiles} disabled={filesLoading || !files} className={btnPrimary}>
+          {filesLoading && <Loader2 className="w-3.5 h-3.5 animate-spin" />}
           Ingest Files
         </button>
       </section>
@@ -130,8 +133,8 @@ export default function IngestionPanel() {
           placeholder="https://example.com/article&#10;https://..."
           className={inputClass}
         />
-        <button onClick={handleUrls} disabled={loading || !urls.trim()} className={btnPrimary}>
-          {loading && <Loader2 className="w-3.5 h-3.5 animate-spin" />}
+        <button onClick={handleUrls} disabled={urlsLoading || !urls.trim()} className={btnPrimary}>
+          {urlsLoading && <Loader2 className="w-3.5 h-3.5 animate-spin" />}
           Ingest URLs
         </button>
       </section>
