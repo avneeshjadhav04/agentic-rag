@@ -9,6 +9,8 @@ const nextConfig = {
     ];
   },
   output: "standalone",
+  // Bind to all interfaces so external traffic can reach the container.
+  hostname: "0.0.0.0",
 };
 
 module.exports = nextConfig;
