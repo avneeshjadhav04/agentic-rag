@@ -19,7 +19,7 @@ export default function ChatInput({ onSend, disabled }: ChatInputProps) {
   };
 
   return (
-    <div className="px-8 py-5 border-t border-line">
+    <div className="px-8 py-5">
       <div
         className={cn(
           "mx-auto max-w-2xl flex items-center border border-line bg-panel",
@@ -36,7 +36,7 @@ export default function ChatInput({ onSend, disabled }: ChatInputProps) {
             }
           }}
           rows={2}
-          placeholder="Ask anything..."
+          placeholder="Message AI..."
           disabled={disabled}
           className="flex-1 bg-transparent px-4 py-3 text-sm text-text placeholder-muted resize-none focus:outline-none"
         />
