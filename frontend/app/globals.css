@@ -55,6 +55,5 @@ textarea:focus,
 select:focus,
 button:focus {
   outline: none;
-  ring: 2px;
-  ring-color: var(--primary);
+  box-shadow: 0 0 0 2px var(--primary);
 }
