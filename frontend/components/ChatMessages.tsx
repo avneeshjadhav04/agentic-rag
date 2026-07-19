@@ -12,7 +12,7 @@ export default function ChatMessages({ messages, isStreaming }: ChatMessagesProp
   if (messages.length === 0) {
     return (
       <div className="flex-1 flex flex-col items-center justify-center px-8">
-        <p className="text-2xl font-mono tracking-tighter text-text">READY</p>
+        <p className="text-2xl font-mono tracking-tighter gradient-ready">READY</p>
         <p className="font-mono text-[11px] uppercase tracking-widest text-muted mt-3">
           Ingest documents or ask a question directly.
         </p>
