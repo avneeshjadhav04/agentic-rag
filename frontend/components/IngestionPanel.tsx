@@ -2,7 +2,7 @@
 
 import { useConfigStore } from "@/store/configStore";
 import { clearStore, ingestFiles, ingestUrls, listSources } from "@/lib/api";
-import { useState, useEffect, useCallback, useRef } from "react";
+import { useState, useEffect, useCallback, useMemo, useRef } from "react";
 import { Loader2, RefreshCw, Plus, Minus } from "lucide-react";
 
 const labelClass = "font-mono text-[10px] uppercase tracking-widest text-muted";
@@ -15,7 +15,10 @@ const btnOutline =
 
 export default function IngestionPanel() {
   const { embedding, envEmbedApiKey, chunkSize, chunkOverlap } = useConfigStore();
-  const effectiveEmbedding = { ...embedding, apiKey: embedding.apiKey || envEmbedApiKey };
+  const effectiveEmbedding = useMemo(
+    () => ({ ...embedding, apiKey: embedding.apiKey || envEmbedApiKey }),
+    [embedding, envEmbedApiKey]
+  );
   const [urls, setUrls] = useState("");
   const [files, setFiles] = useState<FileList | null>(null);
   const [filesLoading, setFilesLoading] = useState(false);
