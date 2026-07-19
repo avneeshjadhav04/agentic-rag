@@ -11,30 +11,36 @@ from langchain_community.document_loaders import (
 from langchain_community.document_loaders.web_base import WebBaseLoader
 
 
-def load_files(entries: List[Tuple[str, bytes]]) -> List[Document]:
-    """Load documents from uploaded file entries (name, content)."""
+def load_files(entries: List[Tuple[str, bytes]]) -> tuple[List[Document], list[dict]]:
+    """Load documents from uploaded file entries (name, content).
+
+    Returns (documents, results) where results has per-file status.
+    """
     documents: List[Document] = []
+    results: list[dict] = []
     for original_name, content in entries:
-        suffix = os.path.splitext(original_name)[1] or ".txt"
+        suffix = os.path.splitext(original_name)[1].lower() or ".txt"
         tmp_path = None
         try:
             with tempfile.NamedTemporaryFile(delete=False, suffix=suffix) as tmp:
                 tmp.write(content)
                 tmp_path = tmp.name
-            if suffix.lower() == ".pdf":
+            if suffix == ".pdf":
                 loader = PyPDFLoader(tmp_path)
             else:
                 loader = TextLoader(tmp_path, encoding="utf-8", autodetect_encoding=True)
-            documents.extend(loader.load())
-        except Exception:
-            continue
+            loaded = loader.load()
+            documents.extend(loaded)
+            results.append({"file": original_name, "chunks": len(loaded), "status": "ok"})
+        except Exception as e:
+            results.append({"file": original_name, "chunks": 0, "status": "error", "error": repr(e)[:200]})
         finally:
             if tmp_path:
                 try:
                     os.remove(tmp_path)
                 except OSError:
                     pass
-    return documents
+    return documents, results
 
 
 def load_urls(urls: List[str]) -> List[Document]:

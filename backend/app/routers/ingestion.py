@@ -34,11 +34,11 @@ async def ingest_files(
         content = await file.read()
         file_entries.append((file.filename or "uploaded_file", content))
 
-    documents = load_files(file_entries)
+    documents, file_results = load_files(file_entries)
     chunks = chunk_documents(documents, chunk_size=chunk_size, chunk_overlap=chunk_overlap)
     store = _build_store(embed_base_url, embed_model, embed_api_key)
     store.add_documents(chunks)
-    return {"ingested": len(chunks)}
+    return {"ingested": len(chunks), "files": file_results}
 
 
 @router.post("/urls")

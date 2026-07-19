@@ -18,7 +18,11 @@ export default function IngestionPanel() {
     setMessage("");
     try {
       const res = await ingestFiles(files, embedding, chunkSize, chunkOverlap);
-      setMessage(`Ingested ${res.ingested} chunks from ${files.length} files.`);
+      const failed = (res.files || []).filter((f: any) => f.status === "error");
+      const msg = failed.length
+        ? `Ingested ${res.ingested} chunks (${failed.length} file(s) failed: ${failed.map((f: any) => f.file).join(", ")})`
+        : `Ingested ${res.ingested} chunks from ${files.length} files.`;
+      setMessage(msg);
       setFiles(null);
     } catch (e: any) {
       setMessage(e.message || "File ingestion failed");
