@@ -12,13 +12,25 @@ interface ChatMessagesProps {
 export default function ChatMessages({ messages, isStreaming }: ChatMessagesProps) {
   const containerRef = useRef<HTMLDivElement>(null);
   const latestUserRef = useRef<HTMLDivElement>(null);
+  const spacerRef = useRef<HTMLDivElement>(null);
 
   useLayoutEffect(() => {
     const container = containerRef.current;
     const userEl = latestUserRef.current;
-    if (!container || !userEl) return;
+    const spacer = spacerRef.current;
+    if (!container || !userEl || !spacer) return;
+
     const paddingTop = parseFloat(getComputedStyle(container).paddingTop);
-    container.scrollTop = userEl.offsetTop - container.offsetTop - paddingTop;
+    const targetScrollTop = userEl.offsetTop - container.offsetTop - paddingTop;
+
+    spacer.style.height = '0px';
+    const maxScrollTop = container.scrollHeight - container.clientHeight;
+
+    if (targetScrollTop > maxScrollTop) {
+      spacer.style.height = `${targetScrollTop - maxScrollTop}px`;
+    }
+
+    container.scrollTop = targetScrollTop;
   }, [messages.length]);
 
   if (messages.length === 0) {
@@ -46,6 +58,7 @@ export default function ChatMessages({ messages, isStreaming }: ChatMessagesProp
             </div>
           );
         })}
+        <div ref={spacerRef} aria-hidden="true" />
       </div>
     </div>
   );
