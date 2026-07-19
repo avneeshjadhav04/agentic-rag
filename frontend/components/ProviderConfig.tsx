@@ -108,7 +108,7 @@ export default function ProviderConfig() {
             value={chat.apiKey}
             onChange={(e) => setChat({ apiKey: e.target.value })}
             placeholder="API Key"
-            className={inputClass}
+            className={`${inputClass} pr-10`}
           />
           <button
             type="button"
@@ -152,7 +152,7 @@ export default function ProviderConfig() {
             value={embedding.apiKey}
             onChange={(e) => setEmbedding({ apiKey: e.target.value })}
             placeholder="API Key"
-            className={inputClass}
+            className={`${inputClass} pr-10`}
           />
           <button
             type="button"
