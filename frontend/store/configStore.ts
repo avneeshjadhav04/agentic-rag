@@ -2,6 +2,28 @@ import { ProviderField } from "@/types";
 import { create } from "zustand";
 import { persist } from "zustand/middleware";
 
+const configStorage = {
+  getItem: (name: string) => {
+    const raw = localStorage.getItem(name);
+    if (!raw) return null;
+    const parsed = JSON.parse(raw);
+    if (parsed?.state) {
+      if (!parsed.state.chat) parsed.state.chat = {} as ProviderField;
+      if (!parsed.state.chat.apiKey) parsed.state.chat.apiKey = "";
+      if (!parsed.state.embedding) parsed.state.embedding = {} as ProviderField;
+      if (!parsed.state.embedding.apiKey) parsed.state.embedding.apiKey = "";
+    }
+    return parsed;
+  },
+  setItem: (name: string, value: { state?: Record<string, unknown> }) => {
+    const cloned = JSON.parse(JSON.stringify(value));
+    if (cloned?.state?.chat) delete cloned.state.chat.apiKey;
+    if (cloned?.state?.embedding) delete cloned.state.embedding.apiKey;
+    localStorage.setItem(name, JSON.stringify(cloned));
+  },
+  removeItem: (name: string) => localStorage.removeItem(name),
+};
+
 export const HARDCODED_CHAT_DEFAULTS: ProviderField = {
   provider: "nvidia-nim",
   baseUrl: "https://integrate.api.nvidia.com/v1",
@@ -58,6 +80,7 @@ export const useConfigStore = create<ConfigState>()(
     }),
     {
       name: "config-storage",
+      storage: configStorage,
       partialize: ({ envChatApiKey, envEmbedApiKey, setEnvChatApiKey, setEnvEmbedApiKey, setChat, setEmbedding, setWebSearchEnabled, setTemperature, setChunkSize, setChunkOverlap, ...rest }) => rest,
     }
   )
