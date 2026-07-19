@@ -23,7 +23,7 @@ export const useConfigStore = create<ConfigState>()(
       chat: {
         provider: "nvidia-nim",
         baseUrl: "https://integrate.api.nvidia.com/v1",
-        model: "deepseek-ai/deepseek-v4-flash",
+        model: "openai/gpt-oss-20b",
         apiKey: "",
       },
       embedding: {

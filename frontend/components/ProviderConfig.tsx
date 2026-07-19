@@ -10,7 +10,7 @@ const DEFAULT_PRESETS: ProviderPreset[] = [
   {
     id: "nvidia-nim",
     name: "NVIDIA NIM",
-    chat: { base_url: "https://integrate.api.nvidia.com/v1", default_model: "deepseek-ai/deepseek-v4-flash" },
+    chat: { base_url: "https://integrate.api.nvidia.com/v1", default_model: "openai/gpt-oss-20b" },
     embeddings: { base_url: "https://integrate.api.nvidia.com/v1", default_model: "nvidia/nemotron-3-embed-1b" },
   },
   {
@@ -99,7 +99,7 @@ export default function ProviderConfig() {
         <input
           value={chat.model}
           onChange={(e) => setChat({ model: e.target.value })}
-          placeholder="Model name"
+          placeholder="Model Tag"
           className={inputClass}
         />
         <div className="relative">
@@ -143,7 +143,7 @@ export default function ProviderConfig() {
         <input
           value={embedding.model}
           onChange={(e) => setEmbedding({ model: e.target.value })}
-          placeholder="Model name"
+          placeholder="Model Tag"
           className={inputClass}
         />
         <div className="relative">
