@@ -51,9 +51,13 @@ RUN curl -fsSL https://deb.nodesource.com/setup_22.x | bash - && \
     apt-get install -y --no-install-recommends nodejs && \
     rm -rf /var/lib/apt/lists/*
 
-# Install Python dependencies.
+# Create a Python virtual environment for the backend to avoid conflicts
+# with Debian's pre-installed system packages.
+RUN python3.13 -m venv /app/.venv
+
+# Install Python dependencies into the virtual environment.
 COPY backend/requirements.txt ./backend/requirements.txt
-RUN pip3 install --break-system-packages --no-cache-dir -r backend/requirements.txt
+RUN /app/.venv/bin/pip install --no-cache-dir -r backend/requirements.txt
 
 # Copy backend code.
 COPY backend/ ./backend
