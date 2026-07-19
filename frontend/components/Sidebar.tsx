@@ -4,9 +4,10 @@ import { useState } from "react";
 import { Plus, Minus } from "lucide-react";
 import ProviderConfig from "./ProviderConfig";
 import IngestionPanel from "./IngestionPanel";
+import WebFallbackToggle from "./WebFallbackToggle";
 
 export default function Sidebar() {
-  const [sections, setSections] = useState({ config: true, ingestion: true });
+  const [sections, setSections] = useState({ ingestion: true, fallback: true, config: true });
 
   const toggleSection = (key: keyof typeof sections) =>
     setSections((prev) => ({ ...prev, [key]: !prev[key] }));
@@ -35,22 +36,32 @@ export default function Sidebar() {
       </div>
 
       <div className="flex-1 overflow-y-auto px-8 py-8 space-y-8">
-        {/* Configuration */}
+        {/* Ingestion */}
         <div>
-          {sectionButton("config", "01", "Configuration")}
-          {sections.config && (
+          {sectionButton("ingestion", "01", "Ingestion")}
+          {sections.ingestion && (
             <div className="mt-4">
-              <ProviderConfig />
+              <IngestionPanel />
             </div>
           )}
         </div>
 
-        {/* Ingestion */}
+        {/* Web Fallback */}
         <div>
-          {sectionButton("ingestion", "02", "Ingestion")}
-          {sections.ingestion && (
+          {sectionButton("fallback", "02", "Web Fallback")}
+          {sections.fallback && (
             <div className="mt-4">
-              <IngestionPanel />
+              <WebFallbackToggle />
+            </div>
+          )}
+        </div>
+
+        {/* Configuration */}
+        <div>
+          {sectionButton("config", "03", "Configuration (optional)")}
+          {sections.config && (
+            <div className="mt-4">
+              <ProviderConfig />
             </div>
           )}
         </div>
