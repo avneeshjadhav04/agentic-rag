@@ -1,8 +1,8 @@
 "use client";
 
-import { useConfigStore } from "@/store/configStore";
-import { ProviderPreset } from "@/types";
-import { fetchProviders } from "@/lib/api";
+import { useConfigStore, HARDCODED_CHAT_DEFAULTS, HARDCODED_EMBEDDING_DEFAULTS } from "@/store/configStore";
+import { ProviderField, ProviderPreset } from "@/types";
+import { fetchDefaults, fetchProviders } from "@/lib/api";
 import { useEffect, useState } from "react";
 import { Eye, EyeOff } from "lucide-react";
 
@@ -43,16 +43,44 @@ export default function ProviderConfig() {
   const [presets, setPresets] = useState<ProviderPreset[]>(DEFAULT_PRESETS);
   const [showChatKey, setShowChatKey] = useState(false);
   const [showEmbedKey, setShowEmbedKey] = useState(false);
+  const [envChatApiKey, setEnvChatApiKey] = useState<string | null>(null);
+  const [envEmbedApiKey, setEnvEmbedApiKey] = useState<string | null>(null);
 
   useEffect(() => {
     fetchProviders()
       .then((data) => {
         if (data && data.length) setPresets(data);
       })
-      .catch(() => {
-        // Keep defaults on error.
-      });
-  }, []);
+      .catch(() => {});
+
+    fetchDefaults()
+      .then((defaults) => {
+        setEnvChatApiKey(defaults.chat.apiKey || null);
+        setEnvEmbedApiKey(defaults.embedding.apiKey || null);
+
+        const state = useConfigStore.getState();
+
+        const applyIfUnchanged = (
+          current: ProviderField,
+          hardcoded: ProviderField,
+          env: ProviderField
+        ): Partial<ProviderField> => {
+          const updates: Partial<ProviderField> = {};
+          for (const key of Object.keys(hardcoded) as (keyof ProviderField)[]) {
+            if (current[key] === hardcoded[key] && env[key] !== undefined) {
+              updates[key] = env[key];
+            }
+          }
+          return updates;
+        };
+
+        const chatUpdates = applyIfUnchanged(state.chat, HARDCODED_CHAT_DEFAULTS, defaults.chat);
+        const embedUpdates = applyIfUnchanged(state.embedding, HARDCODED_EMBEDDING_DEFAULTS, defaults.embedding);
+        if (Object.keys(chatUpdates).length) setChat(chatUpdates);
+        if (Object.keys(embedUpdates).length) setEmbedding(embedUpdates);
+      })
+      .catch(() => {});
+  }, [setChat, setEmbedding]);
 
   const applyChatPreset = (id: string) => {
     const preset = presets.find((p) => p.id === id);
@@ -107,7 +135,7 @@ export default function ProviderConfig() {
             type={showChatKey ? "text" : "password"}
             value={chat.apiKey}
             onChange={(e) => setChat({ apiKey: e.target.value })}
-            placeholder="API Key"
+            placeholder={envChatApiKey ? "Already set via env vars... paste new if needed" : "API Key"}
             className={`${inputClass} pr-8`}
           />
           <button
@@ -151,7 +179,7 @@ export default function ProviderConfig() {
             type={showEmbedKey ? "text" : "password"}
             value={embedding.apiKey}
             onChange={(e) => setEmbedding({ apiKey: e.target.value })}
-            placeholder="API Key"
+            placeholder={envEmbedApiKey ? "Already set via env vars... paste new if needed" : "API Key"}
             className={`${inputClass} pr-8`}
           />
           <button

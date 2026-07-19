@@ -2,6 +2,20 @@ import { ProviderField } from "@/types";
 import { create } from "zustand";
 import { persist } from "zustand/middleware";
 
+export const HARDCODED_CHAT_DEFAULTS: ProviderField = {
+  provider: "nvidia-nim",
+  baseUrl: "https://integrate.api.nvidia.com/v1",
+  model: "openai/gpt-oss-20b",
+  apiKey: "",
+};
+
+export const HARDCODED_EMBEDDING_DEFAULTS: ProviderField = {
+  provider: "nvidia-nim",
+  baseUrl: "https://integrate.api.nvidia.com/v1",
+  model: "nvidia/nemotron-3-embed-1b",
+  apiKey: "",
+};
+
 export interface ConfigState {
   chat: ProviderField;
   embedding: ProviderField;
@@ -20,18 +34,8 @@ export interface ConfigState {
 export const useConfigStore = create<ConfigState>()(
   persist(
     (set) => ({
-      chat: {
-        provider: "nvidia-nim",
-        baseUrl: "https://integrate.api.nvidia.com/v1",
-        model: "openai/gpt-oss-20b",
-        apiKey: "",
-      },
-      embedding: {
-        provider: "nvidia-nim",
-        baseUrl: "https://integrate.api.nvidia.com/v1",
-        model: "nvidia/nemotron-3-embed-1b",
-        apiKey: "",
-      },
+      chat: { ...HARDCODED_CHAT_DEFAULTS },
+      embedding: { ...HARDCODED_EMBEDDING_DEFAULTS },
       webSearchEnabled: true,
       temperature: 0.7,
       chunkSize: 1000,

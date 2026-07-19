@@ -10,6 +10,12 @@ export async function fetchProviders(): Promise<any[]> {
   return data.providers || [];
 }
 
+export async function fetchDefaults(): Promise<{chat: ProviderField; embedding: ProviderField}> {
+  const res = await fetch(`${API_BASE}/api/config/defaults`);
+  if (!res.ok) throw new Error("Failed to load defaults");
+  return res.json();
+}
+
 export async function ingestFiles(
   files: FileList,
   embedding: ProviderField,
