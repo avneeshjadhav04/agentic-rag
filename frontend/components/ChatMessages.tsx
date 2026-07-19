@@ -13,6 +13,9 @@ export default function ChatMessages({ messages, isStreaming }: ChatMessagesProp
   const containerRef = useRef<HTMLDivElement>(null);
   const latestUserRef = useRef<HTMLDivElement>(null);
   const spacerRef = useRef<HTMLDivElement>(null);
+  const prevLengthRef = useRef(messages.length);
+
+  const lastContent = messages[messages.length - 1]?.content ?? "";
 
   useLayoutEffect(() => {
     const container = containerRef.current;
@@ -30,8 +33,12 @@ export default function ChatMessages({ messages, isStreaming }: ChatMessagesProp
       spacer.style.height = `${targetScrollTop - maxScrollTop}px`;
     }
 
-    container.scrollTop = targetScrollTop;
-  }, [messages.length]);
+    const isNewMessage = messages.length !== prevLengthRef.current;
+    prevLengthRef.current = messages.length;
+    if (isNewMessage) {
+      container.scrollTop = targetScrollTop;
+    }
+  }, [messages.length, lastContent]);
 
   if (messages.length === 0) {
     return (
