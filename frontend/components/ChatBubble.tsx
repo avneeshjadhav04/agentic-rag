@@ -4,6 +4,7 @@ import { Copy, Check } from "lucide-react";
 import { useState } from "react";
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
+import remarkBreaks from "remark-breaks";
 import { ChatMessage } from "@/types";
 import { cn } from "@/lib/cn";
 import TraceChain from "./TraceChain";
@@ -53,7 +54,7 @@ export default function ChatBubble({ message, isStreaming }: ChatBubbleProps) {
               <div className="whitespace-pre-wrap">{message.content}</div>
             ) : (
               <div className="prose prose-invert prose-sm max-w-none">
-                <ReactMarkdown remarkPlugins={[remarkGfm]}>
+                <ReactMarkdown remarkPlugins={[remarkGfm, remarkBreaks]}>
                   {message.content}
                 </ReactMarkdown>
               </div>
