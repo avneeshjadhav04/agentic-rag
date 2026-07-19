@@ -130,7 +130,7 @@ export default function IngestionPanel() {
           value={urls}
           onChange={(e) => setUrls(e.target.value)}
           rows={2}
-          placeholder="https://example.com/article&#10;https://..."
+          placeholder="https://example.com/article, https://..."
           className={inputClass}
         />
         <button onClick={handleUrls} disabled={urlsLoading || !urls.trim()} className={btnPrimary}>
