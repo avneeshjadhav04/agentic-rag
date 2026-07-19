@@ -62,22 +62,22 @@ RUN /app/.venv/bin/pip install --no-cache-dir -r backend/requirements.txt
 # Copy backend code.
 COPY backend/ ./backend
 
-# Copy built frontend and install production runtime.
-COPY --from=frontend-builder /app/frontend/.next ./frontend/.next
+# Copy built Next.js standalone frontend server.
+COPY --from=frontend-builder /app/frontend/.next/standalone ./frontend
+COPY --from=frontend-builder /app/frontend/.next/static ./frontend/.next/static
 COPY --from=frontend-builder /app/frontend/public ./frontend/public
-COPY frontend/package.json frontend/package-lock.json* ./frontend/
-RUN cd frontend && npm install --omit=dev
 
 # Copy startup and process manager configs.
 COPY scripts/start.sh ./scripts/start.sh
+COPY scripts/start-frontend.sh ./scripts/start-frontend.sh
 COPY config/supervisord.conf ./config/supervisord.conf
-RUN chmod +x ./scripts/start.sh
+RUN chmod +x ./scripts/start.sh ./scripts/start-frontend.sh
 
 # Expose the single external port (PaaS usually provides $PORT).
 EXPOSE 3000
 
 ENV BACKEND_PORT=8000
-ENV NEXT_PUBLIC_API_BASE_URL=http://localhost:8000
 ENV PORT=3000
+ENV HOSTNAME=0.0.0.0
 
 CMD ["./scripts/start.sh"]
