@@ -105,6 +105,7 @@ export default function IngestionPanel() {
       await clearStore(effectiveEmbedding);
       setMessage("Vector store cleared.");
       setMessageType("info");
+      refreshSources();
     } catch (e: any) {
       setMessage(e.message || "Failed to clear store");
       setMessageType("error");
