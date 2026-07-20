@@ -16,6 +16,42 @@ interface ChatBubbleProps {
   isStreaming: boolean;
 }
 
+function CodeBlock({ language, children }: { language: string; children: string }) {
+  const [copied, setCopied] = useState(false);
+
+  const copy = () => {
+    navigator.clipboard.writeText(children);
+    setCopied(true);
+    setTimeout(() => setCopied(false), 2000);
+  };
+
+  return (
+    <div className="group relative">
+      <button
+        onClick={copy}
+        className="absolute top-2 right-2 z-10 flex items-center gap-1 font-mono text-[10px] uppercase tracking-widest text-muted hover:text-text transition opacity-0 group-hover:opacity-100"
+      >
+        {copied ? (
+          <>
+            <Check className="w-3 h-3" /> Copied
+          </>
+        ) : (
+          <>
+            <Copy className="w-3 h-3" /> Copy
+          </>
+        )}
+      </button>
+      <SyntaxHighlighter
+        style={oneDark}
+        language={language}
+        PreTag="div"
+      >
+        {children}
+      </SyntaxHighlighter>
+    </div>
+  );
+}
+
 export default function ChatBubble({ message, isStreaming }: ChatBubbleProps) {
   const [copied, setCopied] = useState(false);
 
@@ -54,8 +90,6 @@ export default function ChatBubble({ message, isStreaming }: ChatBubbleProps) {
           <div>
             {isUser ? (
               <div className="whitespace-pre-wrap">{message.content}</div>
-            ) : isStreaming ? (
-              <div className="whitespace-pre-wrap">{message.content}</div>
             ) : (
               <div className="prose prose-invert prose-sm max-w-none">
                 <ReactMarkdown
@@ -63,14 +97,9 @@ export default function ChatBubble({ message, isStreaming }: ChatBubbleProps) {
                   components={{
                     code({ className, children, ...props }) {
                       const match = /language-(\w+)/.exec(className || "");
+                      const text = String(children).replace(/\n$/, "");
                       return match ? (
-                        <SyntaxHighlighter
-                          style={oneDark}
-                          language={match[1]}
-                          PreTag="div"
-                        >
-                          {String(children).replace(/\n$/, "")}
-                        </SyntaxHighlighter>
+                        <CodeBlock language={match[1]}>{text}</CodeBlock>
                       ) : (
                         <code className={className} {...props}>
                           {children}
@@ -81,11 +110,14 @@ export default function ChatBubble({ message, isStreaming }: ChatBubbleProps) {
                 >
                   {message.content}
                 </ReactMarkdown>
+                {isStreaming && message.content && (
+                  <span className="streaming-cursor" />
+                )}
               </div>
             )}
           </div>
 
-          {!isUser && message.content && (
+          {!isUser && message.content && !isStreaming && (
             <div className="flex items-center gap-4 mt-3">
               <button
                 onClick={copyContent}
