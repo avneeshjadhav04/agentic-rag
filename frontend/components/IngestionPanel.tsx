@@ -120,6 +120,8 @@ export default function IngestionPanel() {
     setMessage("");
     try {
       await deleteSource(source, effectiveEmbedding);
+      setMessage(`Removed ${source}.`);
+      setMessageType("info");
       refreshSources();
     } catch (e: any) {
       setMessage(e.message || "Failed to delete source");
