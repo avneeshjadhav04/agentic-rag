@@ -73,7 +73,7 @@ export default function TraceChain({ trace, live }: TraceChainProps) {
   if (!trace || trace.length === 0) return null;
 
   return (
-    <div className="w-full max-w-[680px] mb-5 border border-line">
+    <div className="w-full max-w-full md:max-w-[680px] mb-5 border border-line">
       {trace.map((entry, idx) => (
         <TraceRow
           key={entry.step + idx}

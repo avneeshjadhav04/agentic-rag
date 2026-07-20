@@ -65,6 +65,7 @@ button:focus {
   border: 1px solid var(--line);
   border-radius: 0;
   font-family: var(--font-jetbrains-mono);
+  overflow-x: auto;
 }
 .prose code {
   color: var(--text);
@@ -81,6 +82,9 @@ button:focus {
 }
 .prose table {
   border-collapse: collapse;
+  display: block;
+  overflow-x: auto;
+  white-space: nowrap;
 }
 .prose th,
 .prose td {

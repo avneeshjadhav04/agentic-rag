@@ -42,7 +42,7 @@ export default function ChatMessages({ messages, isStreaming }: ChatMessagesProp
 
   if (messages.length === 0) {
     return (
-      <div className="flex-1 flex flex-col items-center justify-center px-8">
+      <div className="flex-1 flex flex-col items-center justify-center px-4 md:px-8">
         <p className="text-2xl font-mono tracking-tighter gradient-ready">READY</p>
         <p className="font-mono text-[11px] uppercase tracking-widest text-muted mt-3">
           Ingest documents or ask a question directly.
@@ -52,8 +52,8 @@ export default function ChatMessages({ messages, isStreaming }: ChatMessagesProp
   }
 
   return (
-    <div ref={containerRef} className="flex-1 overflow-y-auto px-8 py-8">
-      <div className="mx-auto max-w-[680px] space-y-8">
+    <div ref={containerRef} className="flex-1 overflow-y-auto px-4 md:px-8 py-8">
+      <div className="mx-auto max-w-full md:max-w-[680px] space-y-8">
         {messages.map((msg, idx) => {
           const isLatestUser = msg.role === "user" && idx === messages.length - 1 - (messages[messages.length - 1]?.role === "assistant" ? 1 : 0);
           return (

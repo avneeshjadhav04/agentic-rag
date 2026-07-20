@@ -7,7 +7,11 @@ import ChatHeader from "./ChatHeader";
 import ChatMessages from "./ChatMessages";
 import ChatInput from "./ChatInput";
 
-export default function Chat() {
+interface ChatProps {
+  onToggleSidebar?: () => void;
+}
+
+export default function Chat({ onToggleSidebar }: ChatProps) {
   const { messages, addMessage, appendToLastMessage, appendTraceStep, setLastMessageTrace, isStreaming, setStreaming } = useChatStore();
   const { chat, embedding, envChatApiKey, envEmbedApiKey, webSearchEnabled, temperature } = useConfigStore();
 
@@ -44,7 +48,7 @@ export default function Chat() {
 
   return (
     <div className="flex h-full flex-col">
-      <ChatHeader />
+      <ChatHeader onToggleSidebar={onToggleSidebar} />
       <ChatMessages messages={messages} isStreaming={isStreaming} />
       <ChatInput onSend={sendMessage} disabled={isStreaming} />
     </div>

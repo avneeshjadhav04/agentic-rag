@@ -19,10 +19,10 @@ export default function ChatInput({ onSend, disabled }: ChatInputProps) {
   };
 
   return (
-    <div className="px-8 py-5">
+    <div className="px-4 md:px-8 py-5">
       <div
         className={cn(
-          "mx-auto max-w-3xl flex items-center border border-line bg-panel",
+          "mx-auto max-w-full md:max-w-3xl flex items-center border border-line bg-panel",
           disabled && "opacity-40"
         )}
       >

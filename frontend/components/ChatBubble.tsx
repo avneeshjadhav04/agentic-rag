@@ -26,7 +26,7 @@ function CodeBlock({ language, children }: { language: string; children: string 
   };
 
   return (
-    <div className="group relative">
+    <div className="group relative overflow-x-auto">
       <button
         onClick={copy}
         className="absolute top-2 right-2 z-10 flex items-center gap-1 font-mono text-[10px] uppercase tracking-widest text-muted hover:text-text transition opacity-0 group-hover:opacity-100"
@@ -81,7 +81,7 @@ export default function ChatBubble({ message, isStreaming }: ChatBubbleProps) {
       ) : (
         <div
           className={cn(
-            "max-w-[680px] text-sm leading-relaxed",
+            "max-w-full md:max-w-[680px] text-sm leading-relaxed",
             isUser
               ? "bg-accent text-background px-4 py-3"
               : "bg-transparent border-l-2 border-line pl-4"
