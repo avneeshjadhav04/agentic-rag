@@ -47,4 +47,8 @@ class ChromaStore:
 
     def delete_by_source(self, source: str) -> None:
         store = self._get_store()
-        store.delete(filter={"source": source})
+        collection = store._collection
+        results = collection.get(where={"source": source})
+        ids = results.get("ids", [])
+        if ids:
+            collection.delete(ids=ids)
