@@ -173,7 +173,11 @@ export async function* streamChat(
         if (currentEvent === "trace") {
           yield { type: "trace", value: JSON.parse(data) };
         } else {
-          yield { type: "token", value: data };
+          try {
+            yield { type: "token", value: JSON.parse(data) };
+          } catch {
+            yield { type: "token", value: data };
+          }
         }
       } else if (line.trim() === "") {
         currentEvent = "";

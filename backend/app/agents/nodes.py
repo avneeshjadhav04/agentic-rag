@@ -144,6 +144,8 @@ def generate_node_factory(llm: ChatOpenAI):
                 "You are a helpful assistant. Use only the provided context to answer the "
                 "user's question. If the context does not contain enough information, say so. "
                 "Cite sources using [doc N] or [web N] when possible.\n\n"
+                "Use markdown formatting only. Do not use HTML tags. For line breaks, "
+                "end the line with two spaces or use a blank line between paragraphs.\n\n"
                 f"Context:\n{context}"
             )),
             *state["messages"],
@@ -151,6 +153,7 @@ def generate_node_factory(llm: ChatOpenAI):
         ]
         response = llm.invoke(llm_messages)
         generation = response.content if hasattr(response, "content") else str(response)
+        generation = re.sub(r"<br\s*/?>", "\n\n", generation, flags=re.IGNORECASE)
         state["generation"] = generation
         _add_trace(state, "generate", {"has_context": bool(docs), "length": len(generation)})
         return state

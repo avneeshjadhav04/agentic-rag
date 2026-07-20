@@ -100,7 +100,7 @@ async def chat_stream(
             words = answer.split(" ")
             for i, word in enumerate(words):
                 payload = word if i == 0 else " " + word
-                yield f"data: {payload}\n\n"
+                yield f"data: {json.dumps(payload)}\n\n"
             yield f"event: done\ndata: {json.dumps({'trace': final_state.get('trace', [])})}\n\n"
         except Exception as e:
             yield f"event: error\ndata: {json.dumps({'message': str(e)})}\n\n"
