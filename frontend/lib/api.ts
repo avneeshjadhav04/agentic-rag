@@ -102,7 +102,8 @@ export async function* streamChat(
   chat: ProviderField,
   embedding: ProviderField,
   webSearchEnabled: boolean,
-  temperature: number
+  temperature: number,
+  messages: { role: string; content: string }[] = []
 ): AsyncGenerator<
   { type: "token" | "trace"; value: string | any },
   { trace?: any[] } | null,
@@ -110,6 +111,7 @@ export async function* streamChat(
 > {
   const form = new FormData();
   form.append("question", question);
+  form.append("messages", JSON.stringify(messages));
   form.append("chat_provider", chat.provider);
   form.append("chat_base_url", chat.baseUrl);
   form.append("chat_model", chat.model);

@@ -12,6 +12,7 @@ export default function Chat() {
   const { chat, embedding, envChatApiKey, envEmbedApiKey, webSearchEnabled, temperature } = useConfigStore();
 
   const sendMessage = async (question: string) => {
+    const history = messages;
     const effectiveChat = { ...chat, apiKey: chat.apiKey || envChatApiKey };
     const effectiveEmbedding = { ...embedding, apiKey: embedding.apiKey || envEmbedApiKey };
     addMessage({ role: "user", content: question });
@@ -19,7 +20,7 @@ export default function Chat() {
     setStreaming(true);
 
     try {
-      const generator = streamChat(question, effectiveChat, effectiveEmbedding, webSearchEnabled, temperature);
+      const generator = streamChat(question, effectiveChat, effectiveEmbedding, webSearchEnabled, temperature, history);
       let result = await generator.next();
       while (!result.done) {
         const v = result.value;

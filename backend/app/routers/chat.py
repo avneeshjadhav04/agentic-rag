@@ -6,6 +6,8 @@ from typing import AsyncGenerator
 from fastapi import APIRouter, Form, Request
 from fastapi.responses import StreamingResponse
 
+from langchain_core.messages import AIMessage, HumanMessage
+
 from app.agents.graph import build_agentic_rag_graph
 from app.agents.state import AgentState
 from app.models.factory import get_chat_llm, get_embeddings
@@ -33,6 +35,7 @@ def _build_graph(
 async def chat_stream(
     request: Request,
     question: str = Form(...),
+    messages: str = Form(default="[]"),
     chat_provider: str = Form(default="nvidia-nim"),
     chat_base_url: str = Form(...),
     chat_model: str = Form(...),
@@ -54,9 +57,18 @@ async def chat_stream(
             from app.agents.nodes import set_trace_buffer, clear_trace_buffer
 
             trace_buffer: list[dict] = []
+            history_messages = json.loads(messages)
+            base_messages = []
+            for msg in history_messages:
+                role = msg.get("role", "")
+                content = msg.get("content", "")
+                if role == "user":
+                    base_messages.append(HumanMessage(content=content))
+                elif role == "assistant":
+                    base_messages.append(AIMessage(content=content))
             state: AgentState = {
                 "question": question,
-                "messages": [],
+                "messages": base_messages,
                 "documents": [],
                 "web_search_urls": [],
                 "generation": None,

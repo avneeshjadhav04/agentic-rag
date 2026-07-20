@@ -5,6 +5,7 @@ import threading
 from typing import Optional
 
 from langchain_core.documents import Document
+from langchain_core.messages import HumanMessage, SystemMessage
 from langchain_openai import ChatOpenAI, OpenAIEmbeddings
 
 from app.search.webfetch import fetch_url
@@ -138,15 +139,17 @@ def generate_node_factory(llm: ChatOpenAI):
         question = state["question"]
         docs = state["documents"]
         context = "\n\n---\n\n".join(docs) if docs else "No relevant context found."
-        prompt = (
-            "You are a helpful assistant. Use only the provided context to answer the "
-            "user's question. If the context does not contain enough information, say so. "
-            "Cite sources using [doc N] or [web N] when possible.\n\n"
-            f"Context:\n{context}\n\n"
-            f"Question: {question}\n\n"
-            "Answer:"
-        )
-        response = llm.invoke(prompt)
+        llm_messages = [
+            SystemMessage(content=(
+                "You are a helpful assistant. Use only the provided context to answer the "
+                "user's question. If the context does not contain enough information, say so. "
+                "Cite sources using [doc N] or [web N] when possible.\n\n"
+                f"Context:\n{context}"
+            )),
+            *state["messages"],
+            HumanMessage(content=question),
+        ]
+        response = llm.invoke(llm_messages)
         generation = response.content if hasattr(response, "content") else str(response)
         state["generation"] = generation
         _add_trace(state, "generate", {"has_context": bool(docs), "length": len(generation)})
