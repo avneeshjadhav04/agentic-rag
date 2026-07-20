@@ -1,9 +1,9 @@
 "use client";
 
 import { useConfigStore } from "@/store/configStore";
-import { clearStore, ingestFiles, ingestUrls, listSources } from "@/lib/api";
+import { clearStore, deleteSource, ingestFiles, ingestUrls, listSources } from "@/lib/api";
 import { useState, useEffect, useCallback, useMemo, useRef } from "react";
-import { Loader2, RefreshCw, Plus, Minus } from "lucide-react";
+import { Loader2, RefreshCw, Plus, Minus, X } from "lucide-react";
 
 const labelClass = "font-mono text-[10px] uppercase tracking-widest text-muted";
 const inputClass =
@@ -30,6 +30,7 @@ export default function IngestionPanel() {
   const [sources, setSources] = useState<string[]>([]);
   const [loadingSources, setLoadingSources] = useState(false);
   const [sourcesExpanded, setSourcesExpanded] = useState(false);
+  const [deletingSource, setDeletingSource] = useState<string | null>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
   const refreshSources = useCallback(async () => {
@@ -114,6 +115,20 @@ export default function IngestionPanel() {
     }
   };
 
+  const handleDeleteSource = async (source: string) => {
+    setDeletingSource(source);
+    setMessage("");
+    try {
+      await deleteSource(source, effectiveEmbedding);
+      refreshSources();
+    } catch (e: any) {
+      setMessage(e.message || "Failed to delete source");
+      setMessageType("error");
+    } finally {
+      setDeletingSource(null);
+    }
+  };
+
   const statusClass =
     messageType === "error"
       ? "text-text"
@@ -182,7 +197,21 @@ export default function IngestionPanel() {
               <p className="font-mono text-[10px] uppercase tracking-widest text-muted">No sources stored yet.</p>
             ) : (
               sources.map((s, i) => (
-                <p key={i} className="font-mono text-[11px] text-text truncate" title={s}>{s}</p>
+                <div key={i} className="flex items-center gap-2 group">
+                  <p className="font-mono text-[11px] text-text truncate flex-1" title={s}>{s}</p>
+                  <button
+                    onClick={() => handleDeleteSource(s)}
+                    disabled={deletingSource !== null}
+                    className="text-muted hover:text-text transition flex-shrink-0 disabled:opacity-40"
+                    aria-label={`Remove ${s}`}
+                  >
+                    {deletingSource === s ? (
+                      <Loader2 className="w-3 h-3 animate-spin" />
+                    ) : (
+                      <X className="w-3 h-3" />
+                    )}
+                  </button>
+                </div>
               ))
             )}
           </div>

@@ -82,6 +82,21 @@ export async function clearStore(embedding: ProviderField): Promise<any> {
   return res.json();
 }
 
+export async function deleteSource(source: string, embedding: ProviderField): Promise<any> {
+  const form = new FormData();
+  form.append("source", source);
+  form.append("embed_base_url", embedding.baseUrl);
+  form.append("embed_model", embedding.model);
+  form.append("embed_api_key", embedding.apiKey);
+
+  const res = await fetch(`${API_BASE}/api/ingest/delete-source`, {
+    method: "POST",
+    body: form,
+  });
+  if (!res.ok) throw new Error("Failed to delete source");
+  return res.json();
+}
+
 export async function listSources(embedding: ProviderField): Promise<string[]> {
   const form = new FormData();
   form.append("embed_base_url", embedding.baseUrl);

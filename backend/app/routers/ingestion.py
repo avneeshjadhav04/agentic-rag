@@ -69,6 +69,18 @@ async def clear_store(
     return {"cleared": True}
 
 
+@router.post("/delete-source")
+async def delete_source(
+    source: str = Form(...),
+    embed_base_url: str = Form(...),
+    embed_model: str = Form(...),
+    embed_api_key: str = Form(default=""),
+):
+    store = _build_store(embed_base_url, embed_model, embed_api_key)
+    store.delete_by_source(source)
+    return {"deleted": True}
+
+
 @router.post("/list")
 async def list_sources(
     embed_base_url: str = Form(...),
