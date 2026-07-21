@@ -141,12 +141,49 @@ def fetch_urls_node(state: AgentState) -> AgentState:
             fetched.append({"content": text, "metadata": {"source": url}})
     if fetched:
         state["documents"].extend(fetched)
+    state["web_fetched_count"] = len(fetched)
     _add_trace(
         state,
         "fetch_urls",
         {"urls": urls, "successful_fetches": len(fetched)},
     )
     return state
+
+
+def grade_urls_node_factory(llm: ChatOpenAI):
+    def grade_urls(state: AgentState) -> AgentState:
+        question = state["question"]
+        docs = state["documents"]
+        web_count = state.get("web_fetched_count", 0)
+        if web_count == 0:
+            _add_trace(state, "grade_urls", {"grades": [], "relevant_count": 0})
+            return state
+        web_docs = docs[-web_count:]
+        graded: list[tuple[dict, int]] = []
+        grades = []
+        for i, doc in enumerate(web_docs):
+            content = doc["content"]
+            prompt = (
+                "You are a relevance grader. Given a user question and a document chunk, "
+                "respond with JSON: "
+                "{\"relevant\": true/false, \"score\": <0-10>, \"reason\": \"...\"}\n\n"
+                f"Question: {question}\n\n"
+                f"Document chunk:\n{content}\n\n"
+                "JSON:"
+            )
+            result = _llm_json_invoke(llm, prompt, {"relevant": True, "score": 5})
+            is_relevant = bool(result.get("relevant"))
+            score = int(result.get("score", 5))
+            grades.append({"index": i, "relevant": is_relevant, "score": score, "reason": result.get("reason", "")})
+            if is_relevant:
+                graded.append((doc, score))
+        graded.sort(key=lambda x: x[1], reverse=True)
+        relevant_docs = [d for d, _ in graded]
+        state["documents"] = docs[:-web_count] + relevant_docs
+        _add_trace(state, "grade_urls", {"grades": grades, "relevant_count": len(graded)})
+        return state
+
+    return grade_urls
 
 
 def generate_node_factory(llm: ChatOpenAI):

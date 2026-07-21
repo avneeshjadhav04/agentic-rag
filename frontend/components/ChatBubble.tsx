@@ -56,6 +56,7 @@ function SourcesPanel({ trace }: { trace: any[] }) {
   const [expanded, setExpanded] = useState(false);
   const retrieveStep = trace.find((t) => t.step === "retrieve");
   const gradeStep = trace.find((t) => t.step === "grade_documents");
+  const gradeUrlsStep = trace.find((t) => t.step === "grade_urls");
   const fetchStep = trace.find((t) => t.step === "fetch_urls");
 
   const sources: { name: string; isWeb: boolean; chunks?: number }[] = [];
@@ -82,11 +83,15 @@ function SourcesPanel({ trace }: { trace: any[] }) {
     });
   }
 
-  if (fetchStep) {
+  if (fetchStep && gradeUrlsStep) {
     const urls: string[] = fetchStep.urls || [];
     const successful = fetchStep.successful_fetches || 0;
-    urls.slice(0, successful).forEach((url) => {
-      if (url) sources.push({ name: url, isWeb: true });
+    const grades: { index: number; relevant: boolean }[] = gradeUrlsStep.grades || [];
+    urls.slice(0, successful).forEach((url, i) => {
+      const grade = grades[i];
+      if (url && grade?.relevant) {
+        sources.push({ name: url, isWeb: true });
+      }
     });
   }
 
