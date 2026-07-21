@@ -78,8 +78,7 @@ function SourcesPanel({ trace }: { trace: any[] }) {
       }
     });
     sourceIndexMap.forEach((indices, name) => {
-      const totalChunks = allSources[indices[0]]?.chunks || indices.length;
-      sources.push({ name, isWeb: false, chunks: totalChunks });
+      sources.push({ name, isWeb: false, chunks: indices.length });
     });
   }
 
