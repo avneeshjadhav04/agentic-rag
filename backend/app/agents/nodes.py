@@ -2,6 +2,7 @@
 import json
 import re
 import threading
+from collections import Counter
 from typing import Optional
 
 from langchain_core.documents import Document
@@ -57,10 +58,17 @@ def retrieve_node_factory(vector_store: ChromaStore, k: int = 4):
             {"content": doc.page_content, "metadata": doc.metadata}
             for doc in docs
         ]
+        source_counts = Counter(
+            getattr(d, "metadata", {}).get("source", "unknown") for d in docs
+        )
+        sources_summary = [
+            {"name": name, "chunks": count}
+            for name, count in source_counts.items()
+        ]
         _add_trace(
             state,
             "retrieve",
-            {"question": question, "count": len(docs), "sources": [getattr(d, "metadata", {}).get("source", "") for d in docs]},
+            {"question": question, "count": len(docs), "sources": sources_summary},
         )
         return state
 

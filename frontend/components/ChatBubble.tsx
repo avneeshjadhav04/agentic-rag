@@ -58,18 +58,27 @@ function SourcesPanel({ trace }: { trace: any[] }) {
   const gradeStep = trace.find((t) => t.step === "grade_documents");
   const fetchStep = trace.find((t) => t.step === "fetch_urls");
 
-  const sources: { name: string; isWeb: boolean }[] = [];
+  const sources: { name: string; isWeb: boolean; chunks?: number }[] = [];
 
   if (retrieveStep && gradeStep) {
-    const allSources: string[] = retrieveStep.sources || [];
+    const allSources: { name: string; chunks?: number }[] = (retrieveStep.sources || []).map((s: any) =>
+      typeof s === "string" ? { name: s } : s
+    );
     const grades: { index: number; relevant: boolean }[] = gradeStep.grades || [];
     const relevantIndices = new Set(
       grades.filter((g) => g.relevant).map((g) => g.index)
     );
+    const sourceIndexMap = new Map<string, number[]>();
     allSources.forEach((src, i) => {
-      if (relevantIndices.has(i) && src) {
-        sources.push({ name: src, isWeb: false });
+      if (relevantIndices.has(i) && src.name) {
+        const arr = sourceIndexMap.get(src.name) || [];
+        arr.push(i);
+        sourceIndexMap.set(src.name, arr);
       }
+    });
+    sourceIndexMap.forEach((indices, name) => {
+      const totalChunks = allSources[indices[0]]?.chunks || indices.length;
+      sources.push({ name, isWeb: false, chunks: totalChunks });
     });
   }
 
@@ -117,6 +126,11 @@ function SourcesPanel({ trace }: { trace: any[] }) {
                 </a>
               ) : (
                 <span className="truncate">{src.name}</span>
+              )}
+              {src.chunks !== undefined && (
+                <span className="text-muted shrink-0 whitespace-nowrap">
+                  ({src.chunks} chunk{src.chunks > 1 ? "s" : ""})
+                </span>
               )}
             </div>
           ))}
