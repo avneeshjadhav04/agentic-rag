@@ -62,7 +62,13 @@ function SourcesPanel({ trace }: { trace: any[] }) {
   const sources: { name: string; isWeb: boolean; chunks?: number }[] = [];
 
   if (retrieveStep && gradeStep) {
-    const sourceList: string[] = retrieveStep.source_list || [];
+    const aggregated: { name: string; chunks: number }[] = retrieveStep.sources || [];
+    const sourceList: string[] = [];
+    for (const s of aggregated) {
+      for (let j = 0; j < s.chunks; j++) {
+        sourceList.push(s.name);
+      }
+    }
     const grades: { index: number; relevant: boolean }[] = gradeStep.grades || [];
     const relevantIndices = new Set(
       grades.filter((g) => g.relevant).map((g) => g.index)

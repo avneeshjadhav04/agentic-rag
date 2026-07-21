@@ -65,13 +65,10 @@ def retrieve_node_factory(vector_store: ChromaStore, k: int = 4):
             {"name": name, "chunks": count}
             for name, count in source_counts.items()
         ]
-        source_list = [
-            getattr(d, "metadata", {}).get("source", "unknown") for d in docs
-        ]
         _add_trace(
             state,
             "retrieve",
-            {"question": question, "count": len(docs), "sources": sources_summary, "source_list": source_list},
+            {"question": question, "count": len(docs), "sources": sources_summary},
         )
         return state
 
