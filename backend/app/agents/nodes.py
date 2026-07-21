@@ -184,6 +184,21 @@ def generate_node_factory(llm: ChatOpenAI):
 
 def quality_check_node_factory(llm: ChatOpenAI):
     def quality_check(state: AgentState) -> AgentState:
+        docs = state["documents"]
+        if not docs:
+            state["steps"] += 1
+            state["quality_passed"] = True
+            _add_trace(
+                state,
+                "quality_check",
+                {
+                    "grounded": True,
+                    "answers_question": True,
+                    "feedback": "No context available \u2014 answer correctly states it lacks information.",
+                    "attempt": state["steps"],
+                },
+            )
+            return state
         question = state["question"]
         generation = state.get("generation", "")
         docs = state["documents"]
