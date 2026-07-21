@@ -68,7 +68,7 @@ function TraceRow({ step, detail, status, isLast }: { step: string; detail?: Tra
       </button>
       {expanded && detail && (
         <div className="px-4 pb-3">
-          <div className="flex justify-end mb-2">
+          <div className="flex justify-start mb-2">
             <button
               onClick={copyStep}
               className="flex items-center gap-1 font-mono text-[10px] uppercase tracking-widest text-muted hover:text-text transition"
