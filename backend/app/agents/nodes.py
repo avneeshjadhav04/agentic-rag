@@ -64,7 +64,7 @@ def retrieve_node_factory(vector_store: ChromaStore, k: int = 4):
             for doc in docs
         )
         sources_summary = [
-            {"source_id": sid, "name": name, "chunks": count}
+            {"source_id": sid, "source_name": name, "chunks": count}
             for (sid, name), count in source_counts.items()
         ]
         _add_trace(
@@ -107,9 +107,9 @@ def grade_documents_node_factory(llm: ChatOpenAI):
         grouped: dict[str, list[dict]] = defaultdict(list)
         for g in grades:
             sid, name = doc_sources[g["index"]]
-            grouped[sid].append({**g, "source_id": sid, "source": name})
+            grouped[sid].append({**g, "source_id": sid, "source_name": name})
         grades_by_source = [
-            {"source_id": sid, "source": chunks[0]["source"], "chunks": chunks}
+            {"source_id": sid, "source_name": chunks[0]["source_name"], "chunks": chunks}
             for sid, chunks in grouped.items()
         ]
         _add_trace(state, "grade_documents", {"grades_by_source": grades_by_source, "relevant_count": len(graded)})
@@ -201,9 +201,9 @@ def grade_urls_node_factory(llm: ChatOpenAI):
         grouped: dict[str, list[dict]] = defaultdict(list)
         for g in grades:
             sid, name = doc_sources[g["index"]]
-            grouped[sid].append({**g, "source_id": sid, "source": name})
+            grouped[sid].append({**g, "source_id": sid, "source_name": name})
         grades_by_source = [
-            {"source_id": sid, "source": chunks[0]["source"], "chunks": chunks}
+            {"source_id": sid, "source_name": chunks[0]["source_name"], "chunks": chunks}
             for sid, chunks in grouped.items()
         ]
         _add_trace(state, "grade_urls", {"grades_by_source": grades_by_source, "relevant_count": len(graded)})
@@ -244,7 +244,7 @@ def generate_node_factory(llm: ChatOpenAI):
             for doc in docs
         )
         sources_used = [
-            {"source_id": sid, "name": name, "chunks": count}
+            {"source_id": sid, "source_name": name, "chunks": count}
             for (sid, name), count in source_counts.items()
         ]
         _add_trace(state, "generate", {"has_context": bool(docs), "length": len(generation), "sources_used": sources_used})

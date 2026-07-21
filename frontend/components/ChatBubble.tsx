@@ -55,11 +55,11 @@ function CodeBlock({ language, children }: { language: string; children: string 
 function SourcesPanel({ trace }: { trace: any[] }) {
   const [expanded, setExpanded] = useState(false);
   const generateStep = trace.filter((t) => t.step === "generate").pop();
-  const sources: { source_id: string; name: string; isWeb: boolean; chunks: number }[] =
+  const sources: { source_id: string; source_name: string; isWeb: boolean; chunks: number }[] =
     (generateStep?.sources_used || []).map((s: any) => ({
       source_id: s.source_id,
-      name: s.name,
-      isWeb: s.name.startsWith("http://") || s.name.startsWith("https://"),
+      source_name: s.source_name,
+      isWeb: s.source_name.startsWith("http://") || s.source_name.startsWith("https://"),
       chunks: s.chunks,
     }));
 
@@ -88,16 +88,16 @@ function SourcesPanel({ trace }: { trace: any[] }) {
               <span className="text-muted shrink-0">[{i + 1}]</span>
               {src.isWeb ? (
                 <a
-                  href={src.name}
+                  href={src.source_name}
                   target="_blank"
                   rel="noopener noreferrer"
                   className="truncate hover:text-accent transition flex items-center gap-1"
                 >
-                  {src.name}
+                  {src.source_name}
                   <ExternalLink className="w-2.5 h-2.5 shrink-0" />
                 </a>
               ) : (
-                <span className="truncate">{src.name}</span>
+                <span className="truncate">{src.source_name}</span>
               )}
               {src.chunks !== undefined && (
                 <span className="text-muted shrink-0 whitespace-nowrap">
