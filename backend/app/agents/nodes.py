@@ -149,7 +149,7 @@ def generate_node_factory(llm: ChatOpenAI):
             context_parts = []
             for i, doc in enumerate(docs):
                 source = doc.get("metadata", {}).get("source", f"doc {i+1}")
-                context_parts.append(f"[Source: {source}]\n{doc['content']}")
+                context_parts.append(f"Source: {source}\n{doc['content']}")
             context = "\n\n---\n\n".join(context_parts)
         else:
             context = "No relevant context found."
