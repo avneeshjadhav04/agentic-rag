@@ -4,6 +4,7 @@ import { useConfigStore } from "@/store/configStore";
 import { clearStore, deleteSource, ingestFiles, ingestUrls, listSources } from "@/lib/api";
 import { useState, useEffect, useCallback, useMemo, useRef } from "react";
 import { Loader2, RefreshCw, Plus, Minus, X } from "lucide-react";
+import { SourceInfo } from "@/types";
 
 const labelClass = "font-mono text-[10px] uppercase tracking-widest text-muted";
 const inputClass =
@@ -27,7 +28,7 @@ export default function IngestionPanel() {
   const loading = filesLoading || urlsLoading || clearLoading;
   const [message, setMessage] = useState("");
   const [messageType, setMessageType] = useState<"info" | "warn" | "error">("info");
-  const [sources, setSources] = useState<string[]>([]);
+  const [sources, setSources] = useState<SourceInfo[]>([]);
   const [loadingSources, setLoadingSources] = useState(false);
   const [sourcesExpanded, setSourcesExpanded] = useState(false);
   const [deletingSource, setDeletingSource] = useState<string | null>(null);
@@ -115,12 +116,13 @@ export default function IngestionPanel() {
     }
   };
 
-  const handleDeleteSource = async (source: string) => {
-    setDeletingSource(source);
+  const handleDeleteSource = async (source_id: string) => {
+    setDeletingSource(source_id);
     setMessage("");
     try {
-      await deleteSource(source, effectiveEmbedding);
-      setMessage(`Removed ${source}.`);
+      await deleteSource(source_id, effectiveEmbedding);
+      const s = sources.find((s) => s.source_id === source_id);
+      setMessage(`Removed ${s?.name || source_id}.`);
       setMessageType("info");
       refreshSources();
     } catch (e: any) {
@@ -199,15 +201,15 @@ export default function IngestionPanel() {
               <p className="font-mono text-[10px] uppercase tracking-widest text-muted">No sources stored yet.</p>
             ) : (
               sources.map((s, i) => (
-                <div key={i} className="flex items-center gap-2 group">
-                  <p className="font-mono text-[11px] text-text truncate flex-1" title={s}>{s}</p>
+                <div key={s.source_id} className="flex items-center gap-2 group">
+                  <p className="font-mono text-[11px] text-text truncate flex-1" title={s.name}>{s.name}</p>
                   <button
-                    onClick={() => handleDeleteSource(s)}
+                    onClick={() => handleDeleteSource(s.source_id)}
                     disabled={deletingSource !== null}
                     className="text-muted hover:text-text transition flex-shrink-0 disabled:opacity-40"
-                    aria-label={`Remove ${s}`}
+                    aria-label={`Remove ${s.name}`}
                   >
-                    {deletingSource === s ? (
+                    {deletingSource === s.source_id ? (
                       <Loader2 className="w-3 h-3 animate-spin" />
                     ) : (
                       <X className="w-3 h-3" />

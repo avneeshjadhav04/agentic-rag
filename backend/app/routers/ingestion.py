@@ -71,13 +71,13 @@ async def clear_store(
 
 @router.post("/delete-source")
 async def delete_source(
-    source: str = Form(...),
+    source_id: str = Form(...),
     embed_base_url: str = Form(...),
     embed_model: str = Form(...),
     embed_api_key: str = Form(default=""),
 ):
     store = _build_store(embed_base_url, embed_model, embed_api_key)
-    store.delete_by_source(source)
+    store.delete_by_source(source_id)
     return {"deleted": True}
 
 
@@ -90,10 +90,15 @@ async def list_sources(
     store = _build_store(embed_base_url, embed_model, embed_api_key)
     try:
         all_data = store._get_store()._collection.get(include=["metadatas"])
-        sources = sorted({
-            m["source"] for m in all_data["metadatas"]
-            if m and m.get("source")
-        })
+        seen = set()
+        sources = []
+        for m in all_data["metadatas"]:
+            if m and m.get("source_id") and m.get("source"):
+                sid = m["source_id"]
+                if sid not in seen:
+                    seen.add(sid)
+                    sources.append({"source_id": sid, "name": m["source"]})
+        sources.sort(key=lambda s: s["name"])
         return {"sources": sources, "total": len(sources)}
     except Exception as e:
         return {"sources": [], "total": 0, "error": str(e)}

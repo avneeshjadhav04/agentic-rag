@@ -28,3 +28,8 @@ export interface ChatMessage {
   content: string;
   trace?: TraceStep[];
 }
+
+export interface SourceInfo {
+  source_id: string;
+  name: string;
+}

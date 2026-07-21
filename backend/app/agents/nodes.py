@@ -2,7 +2,8 @@
 import json
 import re
 import threading
-from collections import Counter
+import uuid
+from collections import Counter, defaultdict
 from typing import Optional
 
 from langchain_core.documents import Document
@@ -59,11 +60,12 @@ def retrieve_node_factory(vector_store: ChromaStore, k: int = 4):
             for doc in docs
         ]
         source_counts = Counter(
-            getattr(d, "metadata", {}).get("source", "unknown") for d in docs
+            (doc.metadata.get("source_id", "unknown"), doc.metadata.get("source", "unknown"))
+            for doc in docs
         )
         sources_summary = [
-            {"name": name, "chunks": count}
-            for name, count in source_counts.items()
+            {"source_id": sid, "name": name, "chunks": count}
+            for (sid, name), count in source_counts.items()
         ]
         _add_trace(
             state,
@@ -78,7 +80,10 @@ def retrieve_node_factory(vector_store: ChromaStore, k: int = 4):
 def grade_documents_node_factory(llm: ChatOpenAI):
     def grade_documents(state: AgentState) -> AgentState:
         question = state["question"]
-        doc_sources = [doc.get("metadata", {}).get("source", "unknown") for doc in state["documents"]]
+        doc_sources = [
+            (doc.get("metadata", {}).get("source_id", "unknown"), doc.get("metadata", {}).get("source", "unknown"))
+            for doc in state["documents"]
+        ]
         graded: list[tuple[dict, int]] = []
         grades = []
         for i, doc in enumerate(state["documents"]):
@@ -99,14 +104,13 @@ def grade_documents_node_factory(llm: ChatOpenAI):
                 graded.append((doc, score))
         graded.sort(key=lambda x: x[1], reverse=True)
         state["documents"] = [d for d, _ in graded]
-        from collections import defaultdict
         grouped: dict[str, list[dict]] = defaultdict(list)
         for g in grades:
-            source = doc_sources[g["index"]]
-            grouped[source].append(g)
+            sid, name = doc_sources[g["index"]]
+            grouped[sid].append({**g, "source_id": sid, "source": name})
         grades_by_source = [
-            {"source": source, "chunks": chunks}
-            for source, chunks in grouped.items()
+            {"source_id": sid, "source": chunks[0]["source"], "chunks": chunks}
+            for sid, chunks in grouped.items()
         ]
         _add_trace(state, "grade_documents", {"grades_by_source": grades_by_source, "relevant_count": len(graded)})
         return state
@@ -148,7 +152,7 @@ def fetch_urls_node(state: AgentState) -> AgentState:
     for url in urls:
         text = fetch_url(url)
         if text:
-            fetched.append({"content": text, "metadata": {"source": url}})
+            fetched.append({"content": text, "metadata": {"source": url, "source_id": str(uuid.uuid4())}})
     if fetched:
         state["documents"].extend(fetched)
     state["web_fetched_count"] = len(fetched)
@@ -169,7 +173,10 @@ def grade_urls_node_factory(llm: ChatOpenAI):
             _add_trace(state, "grade_urls", {"grades_by_source": [], "relevant_count": 0})
             return state
         web_docs = docs[-web_count:]
-        doc_sources = [doc.get("metadata", {}).get("source", "unknown") for doc in web_docs]
+        doc_sources = [
+            (doc.get("metadata", {}).get("source_id", "unknown"), doc.get("metadata", {}).get("source", "unknown"))
+            for doc in web_docs
+        ]
         graded: list[tuple[dict, int]] = []
         grades = []
         for i, doc in enumerate(web_docs):
@@ -191,14 +198,13 @@ def grade_urls_node_factory(llm: ChatOpenAI):
         graded.sort(key=lambda x: x[1], reverse=True)
         relevant_docs = [d for d, _ in graded]
         state["documents"] = docs[:-web_count] + relevant_docs
-        from collections import defaultdict
         grouped: dict[str, list[dict]] = defaultdict(list)
         for g in grades:
-            source = doc_sources[g["index"]]
-            grouped[source].append(g)
+            sid, name = doc_sources[g["index"]]
+            grouped[sid].append({**g, "source_id": sid, "source": name})
         grades_by_source = [
-            {"source": source, "chunks": chunks}
-            for source, chunks in grouped.items()
+            {"source_id": sid, "source": chunks[0]["source"], "chunks": chunks}
+            for sid, chunks in grouped.items()
         ]
         _add_trace(state, "grade_urls", {"grades_by_source": grades_by_source, "relevant_count": len(graded)})
         return state
@@ -234,11 +240,12 @@ def generate_node_factory(llm: ChatOpenAI):
         generation = re.sub(r"<br\s*/?>", "\n\n", generation, flags=re.IGNORECASE)
         state["generation"] = generation
         source_counts = Counter(
-            doc.get("metadata", {}).get("source", "unknown") for doc in docs
+            (doc.get("metadata", {}).get("source_id", "unknown"), doc.get("metadata", {}).get("source", "unknown"))
+            for doc in docs
         )
         sources_used = [
-            {"name": name, "chunks": count}
-            for name, count in source_counts.items()
+            {"source_id": sid, "name": name, "chunks": count}
+            for (sid, name), count in source_counts.items()
         ]
         _add_trace(state, "generate", {"has_context": bool(docs), "length": len(generation), "sources_used": sources_used})
         return state

@@ -1,4 +1,4 @@
-import { ProviderField } from "@/types";
+import { ProviderField, SourceInfo } from "@/types";
 
 // Use a relative base path so Next.js rewrites proxy requests to the backend.
 export const API_BASE = "";
@@ -82,9 +82,9 @@ export async function clearStore(embedding: ProviderField): Promise<any> {
   return res.json();
 }
 
-export async function deleteSource(source: string, embedding: ProviderField): Promise<any> {
+export async function deleteSource(source_id: string, embedding: ProviderField): Promise<any> {
   const form = new FormData();
-  form.append("source", source);
+  form.append("source_id", source_id);
   form.append("embed_base_url", embedding.baseUrl);
   form.append("embed_model", embedding.model);
   form.append("embed_api_key", embedding.apiKey);
@@ -97,7 +97,7 @@ export async function deleteSource(source: string, embedding: ProviderField): Pr
   return res.json();
 }
 
-export async function listSources(embedding: ProviderField): Promise<string[]> {
+export async function listSources(embedding: ProviderField): Promise<SourceInfo[]> {
   const form = new FormData();
   form.append("embed_base_url", embedding.baseUrl);
   form.append("embed_model", embedding.model);

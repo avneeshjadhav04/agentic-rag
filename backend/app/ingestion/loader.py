@@ -1,6 +1,7 @@
 """Document loading and URL loading utilities."""
 import os
 import tempfile
+import uuid
 from typing import List, Tuple
 
 from langchain_core.documents import Document
@@ -37,8 +38,10 @@ def load_files(entries: List[Tuple[str, bytes]]) -> tuple[List[Document], list[d
                 results.append({"file": original_name, "chunks": 0, "status": "warning", "error": "File loaded but all pages have empty text (scanned document or binary format)"})
                 continue
             documents.extend(loaded)
+            source_id = str(uuid.uuid4())
             for doc in loaded:
                 doc.metadata["source"] = original_name
+                doc.metadata["source_id"] = source_id
             results.append({"file": original_name, "chunks": len(loaded), "status": "ok"})
         except Exception as e:
             results.append({"file": original_name, "chunks": 0, "status": "error", "error": repr(e)[:200]})
@@ -61,8 +64,10 @@ def load_urls(urls: List[str]) -> List[Document]:
         try:
             loader = WebBaseLoader(url)
             docs = loader.load()
+            source_id = str(uuid.uuid4())
             for doc in docs:
                 doc.metadata["source"] = url
+                doc.metadata["source_id"] = source_id
             documents.extend(docs)
         except Exception:
             continue

@@ -55,8 +55,9 @@ function CodeBlock({ language, children }: { language: string; children: string 
 function SourcesPanel({ trace }: { trace: any[] }) {
   const [expanded, setExpanded] = useState(false);
   const generateStep = trace.filter((t) => t.step === "generate").pop();
-  const sources: { name: string; isWeb: boolean; chunks: number }[] =
+  const sources: { source_id: string; name: string; isWeb: boolean; chunks: number }[] =
     (generateStep?.sources_used || []).map((s: any) => ({
+      source_id: s.source_id,
       name: s.name,
       isWeb: s.name.startsWith("http://") || s.name.startsWith("https://"),
       chunks: s.chunks,
@@ -66,9 +67,8 @@ function SourcesPanel({ trace }: { trace: any[] }) {
 
   const seen = new Set<string>();
   const uniqueSources = sources.filter((s) => {
-    const key = s.name;
-    if (seen.has(key)) return false;
-    seen.add(key);
+    if (seen.has(s.source_id)) return false;
+    seen.add(s.source_id);
     return true;
   });
 
