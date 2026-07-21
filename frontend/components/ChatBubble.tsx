@@ -83,6 +83,14 @@ function SourcesPanel({ trace }: { trace: any[] }) {
 
   if (sources.length === 0) return null;
 
+  const seen = new Set<string>();
+  const uniqueSources = sources.filter((s) => {
+    const key = s.name;
+    if (seen.has(key)) return false;
+    seen.add(key);
+    return true;
+  });
+
   return (
     <div className="mt-4 border-t border-line pt-3">
       <button
@@ -90,11 +98,11 @@ function SourcesPanel({ trace }: { trace: any[] }) {
         className="flex items-center gap-1.5 font-mono text-[10px] uppercase tracking-widest text-muted hover:text-text transition"
       >
         {expanded ? <ChevronDown className="w-3 h-3" /> : <ChevronRight className="w-3 h-3" />}
-        Sources ({sources.length})
+        Sources ({uniqueSources.length})
       </button>
       {expanded && (
         <div className="mt-2 space-y-1">
-          {sources.map((src, i) => (
+          {uniqueSources.map((src, i) => (
             <div key={i} className="flex items-center gap-2 font-mono text-[11px] text-text">
               <span className="text-muted shrink-0">[{i + 1}]</span>
               {src.isWeb ? (
