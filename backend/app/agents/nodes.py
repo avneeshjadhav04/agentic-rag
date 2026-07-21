@@ -78,6 +78,7 @@ def retrieve_node_factory(vector_store: ChromaStore, k: int = 4):
 def grade_documents_node_factory(llm: ChatOpenAI):
     def grade_documents(state: AgentState) -> AgentState:
         question = state["question"]
+        doc_sources = [doc.get("metadata", {}).get("source", "unknown") for doc in state["documents"]]
         graded: list[tuple[dict, int]] = []
         grades = []
         for i, doc in enumerate(state["documents"]):
@@ -98,7 +99,16 @@ def grade_documents_node_factory(llm: ChatOpenAI):
                 graded.append((doc, score))
         graded.sort(key=lambda x: x[1], reverse=True)
         state["documents"] = [d for d, _ in graded]
-        _add_trace(state, "grade_documents", {"grades": grades, "relevant_count": len(graded)})
+        from collections import defaultdict
+        grouped: dict[str, list[dict]] = defaultdict(list)
+        for g in grades:
+            source = doc_sources[g["index"]]
+            grouped[source].append(g)
+        grades_by_source = [
+            {"source": source, "chunks": chunks}
+            for source, chunks in grouped.items()
+        ]
+        _add_trace(state, "grade_documents", {"grades_by_source": grades_by_source, "relevant_count": len(graded)})
         return state
 
     return grade_documents
@@ -156,9 +166,10 @@ def grade_urls_node_factory(llm: ChatOpenAI):
         docs = state["documents"]
         web_count = state.get("web_fetched_count", 0)
         if web_count == 0:
-            _add_trace(state, "grade_urls", {"grades": [], "relevant_count": 0})
+            _add_trace(state, "grade_urls", {"grades_by_source": [], "relevant_count": 0})
             return state
         web_docs = docs[-web_count:]
+        doc_sources = [doc.get("metadata", {}).get("source", "unknown") for doc in web_docs]
         graded: list[tuple[dict, int]] = []
         grades = []
         for i, doc in enumerate(web_docs):
@@ -180,7 +191,16 @@ def grade_urls_node_factory(llm: ChatOpenAI):
         graded.sort(key=lambda x: x[1], reverse=True)
         relevant_docs = [d for d, _ in graded]
         state["documents"] = docs[:-web_count] + relevant_docs
-        _add_trace(state, "grade_urls", {"grades": grades, "relevant_count": len(graded)})
+        from collections import defaultdict
+        grouped: dict[str, list[dict]] = defaultdict(list)
+        for g in grades:
+            source = doc_sources[g["index"]]
+            grouped[source].append(g)
+        grades_by_source = [
+            {"source": source, "chunks": chunks}
+            for source, chunks in grouped.items()
+        ]
+        _add_trace(state, "grade_urls", {"grades_by_source": grades_by_source, "relevant_count": len(graded)})
         return state
 
     return grade_urls
