@@ -107,7 +107,7 @@ def grade_documents_node_factory(llm: ChatOpenAI):
         grouped: dict[str, list[dict]] = defaultdict(list)
         for g in grades:
             sid, name = doc_sources[g["index"]]
-            grouped[sid].append(g)
+            grouped[sid].append({**g, "source_id": sid, "source_name": name})
         grades_by_source = [
             {"source_id": sid, "source_name": chunks[0]["source_name"], "chunks": chunks}
             for sid, chunks in grouped.items()
@@ -201,7 +201,7 @@ def grade_urls_node_factory(llm: ChatOpenAI):
         grouped: dict[str, list[dict]] = defaultdict(list)
         for g in grades:
             sid, name = doc_sources[g["index"]]
-            grouped[sid].append(g)
+            grouped[sid].append({**g, "source_id": sid, "source_name": name})
         grades_by_source = [
             {"source_id": sid, "source_name": chunks[0]["source_name"], "chunks": chunks}
             for sid, chunks in grouped.items()
