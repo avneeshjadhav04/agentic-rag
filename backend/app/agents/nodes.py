@@ -213,7 +213,14 @@ def generate_node_factory(llm: ChatOpenAI):
         generation = response.content if hasattr(response, "content") else str(response)
         generation = re.sub(r"<br\s*/?>", "\n\n", generation, flags=re.IGNORECASE)
         state["generation"] = generation
-        _add_trace(state, "generate", {"has_context": bool(docs), "length": len(generation)})
+        source_counts = Counter(
+            doc.get("metadata", {}).get("source", "unknown") for doc in docs
+        )
+        sources_used = [
+            {"name": name, "chunks": count}
+            for name, count in source_counts.items()
+        ]
+        _add_trace(state, "generate", {"has_context": bool(docs), "length": len(generation), "sources_used": sources_used})
         return state
 
     return generate

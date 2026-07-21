@@ -54,49 +54,13 @@ function CodeBlock({ language, children }: { language: string; children: string 
 
 function SourcesPanel({ trace }: { trace: any[] }) {
   const [expanded, setExpanded] = useState(false);
-  const retrieveStep = trace.find((t) => t.step === "retrieve");
-  const gradeStep = trace.find((t) => t.step === "grade_documents");
-  const gradeUrlsStep = trace.find((t) => t.step === "grade_urls");
-  const fetchStep = trace.find((t) => t.step === "fetch_urls");
-
-  const sources: { name: string; isWeb: boolean; chunks?: number }[] = [];
-
-  if (retrieveStep && gradeStep) {
-    const aggregated: { name: string; chunks: number }[] = retrieveStep.sources || [];
-    const sourceList: string[] = [];
-    for (const s of aggregated) {
-      for (let j = 0; j < s.chunks; j++) {
-        sourceList.push(s.name);
-      }
-    }
-    const grades: { index: number; relevant: boolean }[] = gradeStep.grades || [];
-    const relevantIndices = new Set(
-      grades.filter((g) => g.relevant).map((g) => g.index)
-    );
-    const sourceIndexMap = new Map<string, number[]>();
-    sourceList.forEach((src, i) => {
-      if (relevantIndices.has(i) && src) {
-        const arr = sourceIndexMap.get(src) || [];
-        arr.push(i);
-        sourceIndexMap.set(src, arr);
-      }
-    });
-    sourceIndexMap.forEach((indices, name) => {
-      sources.push({ name, isWeb: false, chunks: indices.length });
-    });
-  }
-
-  if (fetchStep && gradeUrlsStep) {
-    const urls: string[] = fetchStep.urls || [];
-    const successful = fetchStep.successful_fetches || 0;
-    const grades: { index: number; relevant: boolean }[] = gradeUrlsStep.grades || [];
-    urls.slice(0, successful).forEach((url, i) => {
-      const grade = grades[i];
-      if (url && grade?.relevant) {
-        sources.push({ name: url, isWeb: true });
-      }
-    });
-  }
+  const generateStep = trace.filter((t) => t.step === "generate").pop();
+  const sources: { name: string; isWeb: boolean; chunks: number }[] =
+    (generateStep?.sources_used || []).map((s: any) => ({
+      name: s.name,
+      isWeb: s.name.startsWith("http://") || s.name.startsWith("https://"),
+      chunks: s.chunks,
+    }));
 
   if (sources.length === 0) return null;
 
