@@ -165,7 +165,6 @@ def generate_node_factory(llm: ChatOpenAI):
             SystemMessage(content=(
                 "You are a helpful assistant. Use only the provided context to answer the "
                 "user's question. If the context does not contain enough information, say so. "
-                "Cite sources using [doc N] or [web N] when possible.\n\n"
                 "Use markdown formatting only. Do not use HTML tags. For line breaks, "
                 "end the line with two spaces or use a blank line between paragraphs.\n\n"
                 f"Context:\n{context}"
