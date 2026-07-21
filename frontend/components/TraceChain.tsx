@@ -1,5 +1,6 @@
 "use client";
 
+import { Copy, Check } from "lucide-react";
 import { useState } from "react";
 import { cn } from "@/lib/cn";
 
@@ -24,8 +25,15 @@ const STEP_LABELS: Record<string, string> = {
 
 function TraceRow({ step, detail, status, isLast }: { step: string; detail?: TraceStep; status: "done" | "running" | "pending"; isLast: boolean }) {
   const [expanded, setExpanded] = useState(false);
+  const [copied, setCopied] = useState(false);
   const label = STEP_LABELS[step] || step;
   const hasDetail = detail && Object.keys(detail).length > 1;
+
+  const copyStep = () => {
+    navigator.clipboard.writeText(JSON.stringify(detail, null, 2));
+    setCopied(true);
+    setTimeout(() => setCopied(false), 2000);
+  };
 
   return (
     <div className={cn("border-b border-line", isLast && "border-b-0")}>
@@ -60,6 +68,22 @@ function TraceRow({ step, detail, status, isLast }: { step: string; detail?: Tra
       </button>
       {expanded && detail && (
         <div className="px-4 pb-3">
+          <div className="flex justify-end mb-2">
+            <button
+              onClick={copyStep}
+              className="flex items-center gap-1 font-mono text-[10px] uppercase tracking-widest text-muted hover:text-text transition"
+            >
+              {copied ? (
+                <>
+                  <Check className="w-3 h-3" /> Copied
+                </>
+              ) : (
+                <>
+                  <Copy className="w-3 h-3" /> Copy
+                </>
+              )}
+            </button>
+          </div>
           <pre className="font-mono text-[11px] text-muted whitespace-pre-wrap overflow-x-auto">
             {JSON.stringify(detail, null, 2)}
           </pre>
