@@ -51,9 +51,12 @@ def _llm_json_invoke(llm: ChatOpenAI, prompt: str, fallback: dict) -> dict:
 
 def retrieve_node_factory(vector_store: ChromaStore, k: int = 4):
     def retrieve(state: AgentState) -> AgentState:
-        question = state["question"]
+        question = state.get("refined_question") or state["question"]
         docs = vector_store.similarity_search(question, k=k)
-        state["documents"] = [doc.page_content for doc in docs]
+        state["documents"] = [
+            {"content": doc.page_content, "metadata": doc.metadata}
+            for doc in docs
+        ]
         _add_trace(
             state,
             "retrieve",
@@ -67,23 +70,27 @@ def retrieve_node_factory(vector_store: ChromaStore, k: int = 4):
 def grade_documents_node_factory(llm: ChatOpenAI):
     def grade_documents(state: AgentState) -> AgentState:
         question = state["question"]
-        relevant_docs = []
+        graded: list[tuple[dict, int]] = []
         grades = []
         for i, doc in enumerate(state["documents"]):
+            content = doc["content"]
             prompt = (
                 "You are a relevance grader. Given a user question and a document chunk, "
-                "respond with JSON: {\"relevant\": true/false, \"reason\": \"...\"}\n\n"
+                "respond with JSON: "
+                "{\"relevant\": true/false, \"score\": <0-10>, \"reason\": \"...\"}\n\n"
                 f"Question: {question}\n\n"
-                f"Document chunk:\n{doc}\n\n"
+                f"Document chunk:\n{content}\n\n"
                 "JSON:"
             )
-            result = _llm_json_invoke(llm, prompt, {"relevant": True})
+            result = _llm_json_invoke(llm, prompt, {"relevant": True, "score": 5})
             is_relevant = bool(result.get("relevant"))
-            grades.append({"index": i, "relevant": is_relevant, "reason": result.get("reason", "")})
+            score = int(result.get("score", 5))
+            grades.append({"index": i, "relevant": is_relevant, "score": score, "reason": result.get("reason", "")})
             if is_relevant:
-                relevant_docs.append(doc)
-        state["documents"] = relevant_docs
-        _add_trace(state, "grade_documents", {"grades": grades, "relevant_count": len(relevant_docs)})
+                graded.append((doc, score))
+        graded.sort(key=lambda x: x[1], reverse=True)
+        state["documents"] = [d for d, _ in graded]
+        _add_trace(state, "grade_documents", {"grades": grades, "relevant_count": len(graded)})
         return state
 
     return grade_documents
@@ -118,12 +125,12 @@ def propose_urls_node_factory(llm: ChatOpenAI):
 
 
 def fetch_urls_node(state: AgentState) -> AgentState:
-    fetched: list[str] = []
+    fetched: list[dict] = []
     urls = state.get("web_search_urls", [])
     for url in urls:
         text = fetch_url(url)
         if text:
-            fetched.append(text)
+            fetched.append({"content": text, "metadata": {"source": url}})
     if fetched:
         state["documents"].extend(fetched)
     _add_trace(
@@ -138,7 +145,14 @@ def generate_node_factory(llm: ChatOpenAI):
     def generate(state: AgentState) -> AgentState:
         question = state["question"]
         docs = state["documents"]
-        context = "\n\n---\n\n".join(docs) if docs else "No relevant context found."
+        if docs:
+            context_parts = []
+            for i, doc in enumerate(docs):
+                source = doc.get("metadata", {}).get("source", f"doc {i+1}")
+                context_parts.append(f"[Source: {source}]\n{doc['content']}")
+            context = "\n\n---\n\n".join(context_parts)
+        else:
+            context = "No relevant context found."
         llm_messages = [
             SystemMessage(content=(
                 "You are a helpful assistant. Use only the provided context to answer the "
@@ -166,7 +180,7 @@ def quality_check_node_factory(llm: ChatOpenAI):
         question = state["question"]
         generation = state.get("generation", "")
         docs = state["documents"]
-        context = "\n\n---\n\n".join(docs) if docs else ""
+        context = "\n\n---\n\n".join(d["content"] for d in docs) if docs else ""
         prompt = (
             "You are a quality checker. Given a question, an answer, and supporting context, "
             "respond with JSON: {\"grounded\": true/false, \"answers_question\": true/false, \"feedback\": \"...\"}\n\n"
@@ -176,13 +190,24 @@ def quality_check_node_factory(llm: ChatOpenAI):
             "JSON:"
         )
         result = _llm_json_invoke(llm, prompt, {"grounded": True, "answers_question": True})
+        grounded = bool(result.get("grounded"))
+        answers_question = bool(result.get("answers_question"))
+        feedback = result.get("feedback", "")
+        state["steps"] += 1
+        if (not grounded or not answers_question) and state["steps"] < state.get("max_loops", 3):
+            state["refined_question"] = (
+                f"The previous answer had issues: {feedback}\n\n"
+                f"Original question: {question}\n\n"
+                f"Please search again with this refined understanding."
+            )
         _add_trace(
             state,
             "quality_check",
             {
-                "grounded": bool(result.get("grounded")),
-                "answers_question": bool(result.get("answers_question")),
-                "feedback": result.get("feedback", ""),
+                "grounded": grounded,
+                "answers_question": answers_question,
+                "feedback": feedback,
+                "attempt": state["steps"],
             },
         )
         return state
@@ -193,5 +218,4 @@ def quality_check_node_factory(llm: ChatOpenAI):
 def route_after_quality(state: AgentState) -> str:
     if state["steps"] >= state.get("max_loops", 3):
         return "end"
-    # We run quality check once and then end to keep graph simple.
-    return "end"
+    return "retrieve"

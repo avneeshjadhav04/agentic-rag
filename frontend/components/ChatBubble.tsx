@@ -1,6 +1,6 @@
 "use client";
 
-import { Copy, Check } from "lucide-react";
+import { Copy, Check, ChevronDown, ChevronRight, ExternalLink } from "lucide-react";
 import { useState } from "react";
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
@@ -48,6 +48,72 @@ function CodeBlock({ language, children }: { language: string; children: string 
       >
         {children}
       </SyntaxHighlighter>
+    </div>
+  );
+}
+
+function SourcesPanel({ trace }: { trace: any[] }) {
+  const [expanded, setExpanded] = useState(false);
+  const retrieveStep = trace.find((t) => t.step === "retrieve");
+  const gradeStep = trace.find((t) => t.step === "grade_documents");
+  const fetchStep = trace.find((t) => t.step === "fetch_urls");
+
+  const sources: { name: string; isWeb: boolean }[] = [];
+
+  if (retrieveStep && gradeStep) {
+    const allSources: string[] = retrieveStep.sources || [];
+    const grades: { index: number; relevant: boolean }[] = gradeStep.grades || [];
+    const relevantIndices = new Set(
+      grades.filter((g) => g.relevant).map((g) => g.index)
+    );
+    allSources.forEach((src, i) => {
+      if (relevantIndices.has(i) && src) {
+        sources.push({ name: src, isWeb: false });
+      }
+    });
+  }
+
+  if (fetchStep) {
+    const urls: string[] = fetchStep.urls || [];
+    const successful = fetchStep.successful_fetches || 0;
+    urls.slice(0, successful).forEach((url) => {
+      if (url) sources.push({ name: url, isWeb: true });
+    });
+  }
+
+  if (sources.length === 0) return null;
+
+  return (
+    <div className="mt-4 border-t border-line pt-3">
+      <button
+        onClick={() => setExpanded(!expanded)}
+        className="flex items-center gap-1.5 font-mono text-[10px] uppercase tracking-widest text-muted hover:text-text transition"
+      >
+        {expanded ? <ChevronDown className="w-3 h-3" /> : <ChevronRight className="w-3 h-3" />}
+        Sources ({sources.length})
+      </button>
+      {expanded && (
+        <div className="mt-2 space-y-1">
+          {sources.map((src, i) => (
+            <div key={i} className="flex items-center gap-2 font-mono text-[11px] text-text">
+              <span className="text-muted shrink-0">[{i + 1}]</span>
+              {src.isWeb ? (
+                <a
+                  href={src.name}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="truncate hover:text-accent transition flex items-center gap-1"
+                >
+                  {src.name}
+                  <ExternalLink className="w-2.5 h-2.5 shrink-0" />
+                </a>
+              ) : (
+                <span className="truncate">{src.name}</span>
+              )}
+            </div>
+          ))}
+        </div>
+      )}
     </div>
   );
 }
@@ -134,6 +200,10 @@ export default function ChatBubble({ message, isStreaming }: ChatBubbleProps) {
                 )}
               </button>
             </div>
+          )}
+
+          {!isUser && message.trace && message.trace.length > 0 && !isStreaming && (
+            <SourcesPanel trace={message.trace} />
           )}
         </div>
       )}

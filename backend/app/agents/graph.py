@@ -53,7 +53,7 @@ def build_agentic_rag_graph(
     workflow.add_conditional_edges(
         "quality_check",
         route_after_quality,
-        {"end": END},
+        {"retrieve": "retrieve", "end": END},
     )
 
     return workflow.compile()
