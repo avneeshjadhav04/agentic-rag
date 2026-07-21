@@ -62,19 +62,17 @@ function SourcesPanel({ trace }: { trace: any[] }) {
   const sources: { name: string; isWeb: boolean; chunks?: number }[] = [];
 
   if (retrieveStep && gradeStep) {
-    const allSources: { name: string; chunks?: number }[] = (retrieveStep.sources || []).map((s: any) =>
-      typeof s === "string" ? { name: s } : s
-    );
+    const sourceList: string[] = retrieveStep.source_list || [];
     const grades: { index: number; relevant: boolean }[] = gradeStep.grades || [];
     const relevantIndices = new Set(
       grades.filter((g) => g.relevant).map((g) => g.index)
     );
     const sourceIndexMap = new Map<string, number[]>();
-    allSources.forEach((src, i) => {
-      if (relevantIndices.has(i) && src.name) {
-        const arr = sourceIndexMap.get(src.name) || [];
+    sourceList.forEach((src, i) => {
+      if (relevantIndices.has(i) && src) {
+        const arr = sourceIndexMap.get(src) || [];
         arr.push(i);
-        sourceIndexMap.set(src.name, arr);
+        sourceIndexMap.set(src, arr);
       }
     });
     sourceIndexMap.forEach((indices, name) => {
