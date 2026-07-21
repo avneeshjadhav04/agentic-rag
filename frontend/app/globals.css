@@ -165,7 +165,7 @@ input[type="range"]::-moz-range-thumb {
 }
 
 .gradient-ready {
-  background: linear-gradient(90deg, var(--accent) 0%, #ffffff 50%, var(--accent) 100%);
+  background: linear-gradient(90deg, #777777 0%, #ffffff 50%, #777777 100%);
   background-size: 200% 100%;
   -webkit-background-clip: text;
   -webkit-text-fill-color: transparent;
