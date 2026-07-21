@@ -16,3 +16,4 @@ class AgentState(TypedDict):
     web_search_enabled: bool
     max_loops: int
     refined_question: Optional[str]
+    quality_passed: bool

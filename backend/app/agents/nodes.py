@@ -194,7 +194,8 @@ def quality_check_node_factory(llm: ChatOpenAI):
         answers_question = bool(result.get("answers_question"))
         feedback = result.get("feedback", "")
         state["steps"] += 1
-        if (not grounded or not answers_question) and state["steps"] < state.get("max_loops", 3):
+        state["quality_passed"] = grounded and answers_question
+        if not state["quality_passed"] and state["steps"] < state.get("max_loops", 3):
             state["refined_question"] = (
                 f"The previous answer had issues: {feedback}\n\n"
                 f"Original question: {question}\n\n"
@@ -216,6 +217,8 @@ def quality_check_node_factory(llm: ChatOpenAI):
 
 
 def route_after_quality(state: AgentState) -> str:
+    if state["quality_passed"]:
+        return "end"
     if state["steps"] >= state.get("max_loops", 3):
         return "end"
     return "retrieve"
