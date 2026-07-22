@@ -10,7 +10,7 @@ export async function fetchProviders(): Promise<any[]> {
   return data.providers || [];
 }
 
-export async function fetchDefaults(): Promise<{chat: ProviderField; embedding: ProviderField}> {
+export async function fetchDefaults(): Promise<{generation: ProviderField; evaluation: ProviderField; embedding: ProviderField}> {
   const res = await fetch(`${API_BASE}/api/config/defaults`);
   if (!res.ok) throw new Error("Failed to load defaults");
   return res.json();
@@ -114,7 +114,7 @@ export async function listSources(embedding: ProviderField): Promise<SourceInfo[
 
 export async function* streamChat(
   question: string,
-  chat: ProviderField,
+  generation: ProviderField,
   embedding: ProviderField,
   webSearchEnabled: boolean,
   temperature: number,
@@ -127,10 +127,10 @@ export async function* streamChat(
   const form = new FormData();
   form.append("question", question);
   form.append("messages", JSON.stringify(messages));
-  form.append("chat_provider", chat.provider);
-  form.append("chat_base_url", chat.baseUrl);
-  form.append("chat_model", chat.model);
-  form.append("chat_api_key", chat.apiKey);
+  form.append("generation_provider", generation.provider);
+  form.append("generation_base_url", generation.baseUrl);
+  form.append("generation_model", generation.model);
+  form.append("generation_api_key", generation.apiKey);
   form.append("embed_provider", embedding.provider);
   form.append("embed_base_url", embedding.baseUrl);
   form.append("embed_model", embedding.model);

@@ -18,3 +18,5 @@ httpx
 python-dotenv
 openai>=1.0
 chardet
+deepeval
+pytest

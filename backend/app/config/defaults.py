@@ -11,7 +11,14 @@ User changes in the UI always win over both env vars and hardcoded values.
 import os
 from typing import Any
 
-HARDCODED_CHAT: dict[str, Any] = {
+HARDCODED_GENERATION: dict[str, Any] = {
+    "provider": "nvidia-nim",
+    "baseUrl": "https://integrate.api.nvidia.com/v1",
+    "model": "openai/gpt-oss-20b",
+    "apiKey": "",
+}
+
+HARDCODED_EVALUATION: dict[str, Any] = {
     "provider": "nvidia-nim",
     "baseUrl": "https://integrate.api.nvidia.com/v1",
     "model": "openai/gpt-oss-20b",
@@ -28,11 +35,17 @@ HARDCODED_EMBEDDING: dict[str, Any] = {
 
 def get_default_config() -> dict[str, Any]:
     return {
-        "chat": {
-            "provider": os.environ.get("DEFAULT_CHAT_PROVIDER", HARDCODED_CHAT["provider"]),
-            "baseUrl": os.environ.get("DEFAULT_CHAT_BASE_URL", HARDCODED_CHAT["baseUrl"]),
-            "model": os.environ.get("DEFAULT_CHAT_MODEL", HARDCODED_CHAT["model"]),
-            "apiKey": os.environ.get("DEFAULT_CHAT_API_KEY", HARDCODED_CHAT["apiKey"]),
+        "generation": {
+            "provider": os.environ.get("DEFAULT_GENERATION_PROVIDER", HARDCODED_GENERATION["provider"]),
+            "baseUrl": os.environ.get("DEFAULT_GENERATION_BASE_URL", HARDCODED_GENERATION["baseUrl"]),
+            "model": os.environ.get("DEFAULT_GENERATION_MODEL", HARDCODED_GENERATION["model"]),
+            "apiKey": os.environ.get("DEFAULT_GENERATION_API_KEY", HARDCODED_GENERATION["apiKey"]),
+        },
+        "evaluation": {
+            "provider": os.environ.get("DEFAULT_EVALUATION_PROVIDER", HARDCODED_EVALUATION["provider"]),
+            "baseUrl": os.environ.get("DEFAULT_EVALUATION_BASE_URL", HARDCODED_EVALUATION["baseUrl"]),
+            "model": os.environ.get("DEFAULT_EVALUATION_MODEL", HARDCODED_EVALUATION["model"]),
+            "apiKey": os.environ.get("DEFAULT_EVALUATION_API_KEY", HARDCODED_EVALUATION["apiKey"]),
         },
         "embedding": {
             "provider": os.environ.get("DEFAULT_EMBEDDING_PROVIDER", HARDCODED_EMBEDDING["provider"]),

@@ -13,18 +13,18 @@ interface ChatProps {
 
 export default function Chat({ onToggleSidebar }: ChatProps) {
   const { messages, addMessage, appendToLastMessage, appendTraceStep, setLastMessageTrace, isStreaming, setStreaming } = useChatStore();
-  const { chat, embedding, envChatApiKey, envEmbedApiKey, webSearchEnabled, temperature } = useConfigStore();
+  const { generation, embedding, envGenerationApiKey, envEmbedApiKey, webSearchEnabled, temperature } = useConfigStore();
 
   const sendMessage = async (question: string) => {
     const history = messages;
-    const effectiveChat = { ...chat, apiKey: chat.apiKey || envChatApiKey };
+    const effectiveGeneration = { ...generation, apiKey: generation.apiKey || envGenerationApiKey };
     const effectiveEmbedding = { ...embedding, apiKey: embedding.apiKey || envEmbedApiKey };
     addMessage({ role: "user", content: question });
     addMessage({ role: "assistant", content: "" });
     setStreaming(true);
 
     try {
-      const generator = streamChat(question, effectiveChat, effectiveEmbedding, webSearchEnabled, temperature, history);
+      const generator = streamChat(question, effectiveGeneration, effectiveEmbedding, webSearchEnabled, temperature, history);
       let result = await generator.next();
       while (!result.done) {
         const v = result.value;

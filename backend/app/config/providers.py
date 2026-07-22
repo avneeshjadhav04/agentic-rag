@@ -14,6 +14,10 @@ PROVIDER_PRESETS: dict[str, dict[str, Any]] = {
             "base_url": "https://integrate.api.nvidia.com/v1",
             "default_model": "deepseek-ai/deepseek-v4-flash",
         },
+        "evaluations": {
+            "base_url": "https://integrate.api.nvidia.com/v1",
+            "default_model": "openai/gpt-oss-20b",
+        },
         "embeddings": {
             "base_url": "https://integrate.api.nvidia.com/v1",
             "default_model": "nvidia/nemotron-3-embed-1b",
@@ -22,6 +26,10 @@ PROVIDER_PRESETS: dict[str, dict[str, Any]] = {
     "openai": {
         "name": "OpenAI",
         "chat": {
+            "base_url": "https://api.openai.com/v1",
+            "default_model": "gpt-4o-mini",
+        },
+        "evaluations": {
             "base_url": "https://api.openai.com/v1",
             "default_model": "gpt-4o-mini",
         },
@@ -36,6 +44,10 @@ PROVIDER_PRESETS: dict[str, dict[str, Any]] = {
             "base_url": "http://localhost:11434/v1",
             "default_model": "llama3.1",
         },
+        "evaluations": {
+            "base_url": "http://localhost:11434/v1",
+            "default_model": "llama3.1",
+        },
         "embeddings": {
             "base_url": "http://localhost:11434/v1",
             "default_model": "nomic-embed-text",
@@ -44,6 +56,10 @@ PROVIDER_PRESETS: dict[str, dict[str, Any]] = {
     "custom": {
         "name": "Custom",
         "chat": {
+            "base_url": "",
+            "default_model": "",
+        },
+        "evaluations": {
             "base_url": "",
             "default_model": "",
         },
@@ -62,6 +78,7 @@ def get_provider_list() -> list[dict[str, Any]]:
             "id": key,
             "name": data["name"],
             "chat": data["chat"],
+            "evaluations": data["evaluations"],
             "embeddings": data["embeddings"],
         }
         for key, data in PROVIDER_PRESETS.items()

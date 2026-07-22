@@ -12,6 +12,10 @@ export interface ProviderPreset {
     base_url: string;
     default_model: string;
   };
+  evaluations: {
+    base_url: string;
+    default_model: string;
+  };
   embeddings: {
     base_url: string;
     default_model: string;

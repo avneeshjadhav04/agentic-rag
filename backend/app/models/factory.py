@@ -5,7 +5,7 @@ from openai import OpenAI
 from langchain_openai import ChatOpenAI, OpenAIEmbeddings
 
 
-def get_chat_llm(
+def get_generation_llm(
     base_url: str,
     model: str,
     api_key: str,
@@ -21,6 +21,26 @@ def get_chat_llm(
         temperature=temperature,
         max_tokens=max_tokens,
         streaming=True,
+    )
+
+
+def get_eval_llm(
+    base_url: str,
+    model: str,
+    api_key: str,
+    temperature: float = 0.0,
+    max_tokens: Optional[int] = 2048,
+) -> ChatOpenAI:
+    """LLM used as the DeepEval judge. Non-streaming, low temperature for stable scoring."""
+    if not base_url or not model:
+        raise ValueError("base_url and model are required")
+    return ChatOpenAI(
+        base_url=base_url,
+        model=model,
+        api_key=api_key or "dummy",
+        temperature=temperature,
+        max_tokens=max_tokens,
+        streaming=False,
     )
 
 

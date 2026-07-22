@@ -8,8 +8,14 @@ const configStorage = {
     if (!raw) return null;
     const parsed = JSON.parse(raw);
     if (parsed?.state) {
-      if (!parsed.state.chat) parsed.state.chat = {} as ProviderField;
-      if (!parsed.state.chat.apiKey) parsed.state.chat.apiKey = "";
+      if (!parsed.state.generation && parsed.state.chat) {
+        parsed.state.generation = parsed.state.chat;
+        delete parsed.state.chat;
+      }
+      if (!parsed.state.generation) parsed.state.generation = {} as ProviderField;
+      if (!parsed.state.generation.apiKey) parsed.state.generation.apiKey = "";
+      if (!parsed.state.evaluation) parsed.state.evaluation = {} as ProviderField;
+      if (!parsed.state.evaluation.apiKey) parsed.state.evaluation.apiKey = "";
       if (!parsed.state.embedding) parsed.state.embedding = {} as ProviderField;
       if (!parsed.state.embedding.apiKey) parsed.state.embedding.apiKey = "";
     }
@@ -17,14 +23,22 @@ const configStorage = {
   },
   setItem: (name: string, value: { state?: Record<string, unknown> }) => {
     const cloned = JSON.parse(JSON.stringify(value));
-    if (cloned?.state?.chat) delete cloned.state.chat.apiKey;
+    if (cloned?.state?.generation) delete cloned.state.generation.apiKey;
+    if (cloned?.state?.evaluation) delete cloned.state.evaluation.apiKey;
     if (cloned?.state?.embedding) delete cloned.state.embedding.apiKey;
     localStorage.setItem(name, JSON.stringify(cloned));
   },
   removeItem: (name: string) => localStorage.removeItem(name),
 };
 
-export const HARDCODED_CHAT_DEFAULTS: ProviderField = {
+export const HARDCODED_GENERATION_DEFAULTS: ProviderField = {
+  provider: "nvidia-nim",
+  baseUrl: "https://integrate.api.nvidia.com/v1",
+  model: "openai/gpt-oss-20b",
+  apiKey: "",
+};
+
+export const HARDCODED_EVALUATION_DEFAULTS: ProviderField = {
   provider: "nvidia-nim",
   baseUrl: "https://integrate.api.nvidia.com/v1",
   model: "openai/gpt-oss-20b",
@@ -39,39 +53,47 @@ export const HARDCODED_EMBEDDING_DEFAULTS: ProviderField = {
 };
 
 export interface ConfigState {
-  chat: ProviderField;
+  generation: ProviderField;
+  evaluation: ProviderField;
   embedding: ProviderField;
-  envChatApiKey: string;
+  envGenerationApiKey: string;
+  envEvalApiKey: string;
   envEmbedApiKey: string;
   webSearchEnabled: boolean;
   temperature: number;
   chunkSize: number;
   chunkOverlap: number;
-  setChat: (chat: Partial<ProviderField>) => void;
+  setGeneration: (generation: Partial<ProviderField>) => void;
+  setEvaluation: (evaluation: Partial<ProviderField>) => void;
   setEmbedding: (embedding: Partial<ProviderField>) => void;
   setWebSearchEnabled: (enabled: boolean) => void;
   setTemperature: (temp: number) => void;
   setChunkSize: (size: number) => void;
   setChunkOverlap: (overlap: number) => void;
-  setEnvChatApiKey: (key: string) => void;
+  setEnvGenerationApiKey: (key: string) => void;
+  setEnvEvalApiKey: (key: string) => void;
   setEnvEmbedApiKey: (key: string) => void;
 }
 
 export const useConfigStore = create<ConfigState>()(
   persist(
     (set) => ({
-      chat: { ...HARDCODED_CHAT_DEFAULTS },
+      generation: { ...HARDCODED_GENERATION_DEFAULTS },
+      evaluation: { ...HARDCODED_EVALUATION_DEFAULTS },
       embedding: { ...HARDCODED_EMBEDDING_DEFAULTS },
-      envChatApiKey: "",
+      envGenerationApiKey: "",
+      envEvalApiKey: "",
       envEmbedApiKey: "",
       webSearchEnabled: true,
       temperature: 0.7,
       chunkSize: 1000,
       chunkOverlap: 200,
-      setChat: (chat) => set((state) => ({ chat: { ...state.chat, ...chat } })),
+      setGeneration: (generation) => set((state) => ({ generation: { ...state.generation, ...generation } })),
+      setEvaluation: (evaluation) => set((state) => ({ evaluation: { ...state.evaluation, ...evaluation } })),
       setEmbedding: (embedding) =>
         set((state) => ({ embedding: { ...state.embedding, ...embedding } })),
-      setEnvChatApiKey: (key) => set({ envChatApiKey: key }),
+      setEnvGenerationApiKey: (key) => set({ envGenerationApiKey: key }),
+      setEnvEvalApiKey: (key) => set({ envEvalApiKey: key }),
       setEnvEmbedApiKey: (key) => set({ envEmbedApiKey: key }),
       setWebSearchEnabled: (enabled) => set({ webSearchEnabled: enabled }),
       setTemperature: (temp) => set({ temperature: temp }),
@@ -81,7 +103,7 @@ export const useConfigStore = create<ConfigState>()(
     {
       name: "config-storage",
       storage: configStorage,
-      partialize: ({ envChatApiKey, envEmbedApiKey, setEnvChatApiKey, setEnvEmbedApiKey, setChat, setEmbedding, setWebSearchEnabled, setTemperature, setChunkSize, setChunkOverlap, ...rest }) => rest,
+      partialize: ({ envGenerationApiKey, envEvalApiKey, envEmbedApiKey, setGeneration, setEvaluation, setEmbedding, setWebSearchEnabled, setTemperature, setChunkSize, setChunkOverlap, setEnvGenerationApiKey, setEnvEvalApiKey, setEnvEmbedApiKey, ...rest }) => rest,
     }
   )
 );
