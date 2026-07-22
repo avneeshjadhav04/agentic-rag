@@ -4,7 +4,7 @@ import os
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
-from app.routers import chat, config, ingestion
+from app.routers import chat, config, eval, ingestion
 
 app = FastAPI(title="Agentic RAG Backend", version="0.1.0")
 
@@ -20,6 +20,7 @@ app.add_middleware(
 app.include_router(chat.router)
 app.include_router(ingestion.router)
 app.include_router(config.router)
+app.include_router(eval.router)
 
 
 @app.get("/api/health")

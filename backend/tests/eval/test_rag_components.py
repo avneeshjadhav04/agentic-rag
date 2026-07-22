@@ -12,7 +12,7 @@ import pytest
 from deepeval.metrics import AnswerRelevancyMetric, ContextualRelevancyMetric
 from deepeval.test_case import LLMTestCase
 
-from .conftest import run_graph_for_question
+from app.eval.runner import run_graph_for_question
 
 
 def test_rag_component_level(golden_dataset, rag_graph, judge_llm):

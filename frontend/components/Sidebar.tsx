@@ -5,13 +5,14 @@ import { Plus, Minus, X } from "lucide-react";
 import ProviderConfig from "./ProviderConfig";
 import IngestionPanel from "./IngestionPanel";
 import WebFallbackToggle from "./WebFallbackToggle";
+import EvalPanel from "./EvalPanel";
 
 interface SidebarProps {
   onClose?: () => void;
 }
 
 export default function Sidebar({ onClose }: SidebarProps) {
-  const [sections, setSections] = useState({ ingestion: true, fallback: true, config: true });
+  const [sections, setSections] = useState({ ingestion: true, fallback: true, eval: false, config: true });
 
   const toggleSection = (key: keyof typeof sections) =>
     setSections((prev) => ({ ...prev, [key]: !prev[key] }));
@@ -71,9 +72,19 @@ export default function Sidebar({ onClose }: SidebarProps) {
           )}
         </div>
 
+        {/* Evaluation */}
+        <div>
+          {sectionButton("eval", "03", "Evaluation")}
+          {sections.eval && (
+            <div className="mt-4">
+              <EvalPanel />
+            </div>
+          )}
+        </div>
+
         {/* Configuration */}
         <div>
-          {sectionButton("config", "03", "Configuration (optional)")}
+          {sectionButton("config", "04", "Configuration (optional)")}
           {sections.config && (
             <div className="mt-4">
               <ProviderConfig />

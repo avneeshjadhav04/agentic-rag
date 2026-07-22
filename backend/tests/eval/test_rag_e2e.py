@@ -21,7 +21,7 @@ from deepeval.metrics import (
 )
 from deepeval.test_case import LLMTestCase
 
-from .conftest import run_graph_for_question
+from app.eval.runner import run_graph_for_question
 
 
 def _make_test_case(question, expected_output, actual_output, retrieval_context):

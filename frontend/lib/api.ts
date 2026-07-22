@@ -1,4 +1,4 @@
-import { ProviderField, SourceInfo } from "@/types";
+import { ProviderField, SourceInfo, EvalSummary } from "@/types";
 
 // Use a relative base path so Next.js rewrites proxy requests to the backend.
 export const API_BASE = "";
@@ -193,6 +193,93 @@ export async function* streamChat(
           } catch {
             yield { type: "token", value: data };
           }
+        }
+      } else if (line.trim() === "") {
+        currentEvent = "";
+      }
+    }
+  }
+
+  return null;
+}
+
+export async function fetchEvalResults(): Promise<EvalSummary | null> {
+  const res = await fetch(`${API_BASE}/api/eval/results`);
+  if (!res.ok) return null;
+  const data = await res.json();
+  if (data.error) return null;
+  return data as EvalSummary;
+}
+
+export async function* streamEvalRun(
+  generation: ProviderField,
+  evaluation: ProviderField,
+  embedding: ProviderField
+): AsyncGenerator<
+  { type: "progress" | "done" | "error"; value: any },
+  EvalSummary | null,
+  unknown
+> {
+  const form = new FormData();
+  form.append("generation_base_url", generation.baseUrl);
+  form.append("generation_model", generation.model);
+  form.append("generation_api_key", generation.apiKey);
+  form.append("evaluation_base_url", evaluation.baseUrl);
+  form.append("evaluation_model", evaluation.model);
+  form.append("evaluation_api_key", evaluation.apiKey);
+  form.append("embed_base_url", embedding.baseUrl);
+  form.append("embed_model", embedding.model);
+  form.append("embed_api_key", embedding.apiKey);
+
+  const controller = new AbortController();
+  const timeout = setTimeout(() => controller.abort(), 600000);
+  const res = await fetch(`${API_BASE}/api/eval/run`, {
+    method: "POST",
+    body: form,
+    signal: controller.signal,
+  });
+  clearTimeout(timeout);
+  if (!res.ok) {
+    const body = await res.text().catch(() => "");
+    throw new Error(`Eval run failed (${res.status}): ${body.slice(0, 200)}`);
+  }
+  if (!res.body) throw new Error("No response body");
+
+  const reader = res.body.getReader();
+  const decoder = new TextDecoder();
+  let buffer = "";
+  let currentEvent = "";
+
+  while (true) {
+    const { value, done } = await reader.read();
+    if (done) break;
+    buffer += decoder.decode(value, { stream: true });
+    const lines = buffer.split("\n");
+    buffer = lines.pop() || "";
+
+    for (const line of lines) {
+      if (line.startsWith("event: ")) {
+        currentEvent = line.replace("event: ", "").trim();
+      } else if (line.startsWith("data: ")) {
+        const data = line.replace("data: ", "");
+        if (currentEvent === "done") {
+          try {
+            const parsed = JSON.parse(data);
+            return parsed as EvalSummary;
+          } catch {
+            return null;
+          }
+        }
+        if (currentEvent === "error") {
+          try {
+            const parsed = JSON.parse(data);
+            throw new Error(parsed.message || "Eval run failed");
+          } catch (e) {
+            throw e;
+          }
+        }
+        if (currentEvent === "progress") {
+          yield { type: "progress", value: JSON.parse(data) };
         }
       } else if (line.trim() === "") {
         currentEvent = "";
