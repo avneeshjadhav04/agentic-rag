@@ -12,7 +12,7 @@ interface SidebarProps {
 }
 
 export default function Sidebar({ onClose }: SidebarProps) {
-  const [sections, setSections] = useState({ ingestion: true, fallback: true, eval: false, config: true });
+  const [sections, setSections] = useState({ ingestion: true, fallback: true, eval: true, config: true });
 
   const toggleSection = (key: keyof typeof sections) =>
     setSections((prev) => ({ ...prev, [key]: !prev[key] }));

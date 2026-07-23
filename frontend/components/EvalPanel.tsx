@@ -1,9 +1,9 @@
 "use client";
 
 import { useConfigStore } from "@/store/configStore";
-import { fetchEvalResults, streamEvalRun } from "@/lib/api";
+import { fetchEvalResults, streamEvalRun, streamGenerateGoldens } from "@/lib/api";
 import { useState, useEffect, useCallback, useMemo, useRef } from "react";
-import { Loader2, RefreshCw, Play, Plus, Minus, Copy, Check } from "lucide-react";
+import { Loader2, RefreshCw, Play, Plus, Minus, Copy, Check, Sparkles } from "lucide-react";
 import { EvalSummary, GoldenResult, MetricResult } from "@/types";
 
 const labelClass = "font-mono text-[10px] uppercase tracking-widest text-muted";
@@ -118,10 +118,12 @@ export default function EvalPanel() {
 
   const [summary, setSummary] = useState<EvalSummary | null>(null);
   const [running, setRunning] = useState(false);
+  const [generating, setGenerating] = useState(false);
   const [loadingResults, setLoadingResults] = useState(false);
   const [message, setMessage] = useState("");
   const [messageType, setMessageType] = useState<"info" | "warn" | "error">("info");
   const [progressCount, setProgressCount] = useState(0);
+  const [genStage, setGenStage] = useState("");
 
   const refreshResults = useCallback(async () => {
     setLoadingResults(true);
@@ -170,6 +172,32 @@ export default function EvalPanel() {
     }
   };
 
+  const handleGenerate = async () => {
+    setGenerating(true);
+    setMessage("");
+    setGenStage("Starting…");
+    try {
+      const generator = streamGenerateGoldens(effectiveEvaluation, effectiveEmbedding);
+      let result = await generator.next();
+      while (!result.done) {
+        if (result.value.type === "progress") {
+          setGenStage(result.value.value?.message || "Working…");
+        }
+        result = await generator.next();
+      }
+      if (result.value) {
+        setMessage(`Generated ${result.value.count} goldens. You can now run evals.`);
+        setMessageType("info");
+      }
+    } catch (e: any) {
+      setMessage(e.message || "Golden generation failed");
+      setMessageType("error");
+    } finally {
+      setGenerating(false);
+      setGenStage("");
+    }
+  };
+
   const statusClass =
     messageType === "error"
       ? "text-text"
@@ -179,9 +207,35 @@ export default function EvalPanel() {
 
   return (
     <div className="space-y-6">
+      {/* Generate Goldens button */}
+      <section className="space-y-3">
+        <button
+          onClick={handleGenerate}
+          disabled={generating || running}
+          className={btnOutline}
+        >
+          {generating ? (
+            <>
+              <Loader2 className="w-3.5 h-3.5 animate-spin" />
+              {genStage || "Generating…"}
+            </>
+          ) : (
+            <>
+              <Sparkles className="w-3.5 h-3.5" />
+              Generate Goldens
+            </>
+          )}
+        </button>
+        {generating && (
+          <p className="font-mono text-[10px] uppercase tracking-widest text-muted">
+            Synthesizing Q&A pairs from your ingested documents…
+          </p>
+        )}
+      </section>
+
       {/* Run button */}
       <section className="space-y-3">
-        <button onClick={handleRun} disabled={running} className={btnPrimary}>
+        <button onClick={handleRun} disabled={running || generating} className={btnPrimary}>
           {running ? (
             <>
               <Loader2 className="w-3.5 h-3.5 animate-spin" />

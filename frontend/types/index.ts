@@ -67,3 +67,13 @@ export interface EvalSummary {
   goldens: GoldenResult[];
   run_at: string;
 }
+
+export interface GoldenGenerationStage {
+  stage: string;
+  message: string;
+}
+
+export interface GoldenGenerationResult {
+  count: number;
+  path: string;
+}

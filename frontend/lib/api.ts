@@ -1,4 +1,4 @@
-import { ProviderField, SourceInfo, EvalSummary } from "@/types";
+import { ProviderField, SourceInfo, EvalSummary, GoldenGenerationResult } from "@/types";
 
 // Use a relative base path so Next.js rewrites proxy requests to the backend.
 export const API_BASE = "";
@@ -274,6 +274,81 @@ export async function* streamEvalRun(
           try {
             const parsed = JSON.parse(data);
             throw new Error(parsed.message || "Eval run failed");
+          } catch (e) {
+            throw e;
+          }
+        }
+        if (currentEvent === "progress") {
+          yield { type: "progress", value: JSON.parse(data) };
+        }
+      } else if (line.trim() === "") {
+        currentEvent = "";
+      }
+    }
+  }
+
+  return null;
+}
+
+export async function* streamGenerateGoldens(
+  evaluation: ProviderField,
+  embedding: ProviderField
+): AsyncGenerator<
+  { type: "progress" | "done" | "error"; value: any },
+  GoldenGenerationResult | null,
+  unknown
+> {
+  const form = new FormData();
+  form.append("evaluation_base_url", evaluation.baseUrl);
+  form.append("evaluation_model", evaluation.model);
+  form.append("evaluation_api_key", evaluation.apiKey);
+  form.append("embed_base_url", embedding.baseUrl);
+  form.append("embed_model", embedding.model);
+  form.append("embed_api_key", embedding.apiKey);
+
+  const controller = new AbortController();
+  const timeout = setTimeout(() => controller.abort(), 600000);
+  const res = await fetch(`${API_BASE}/api/eval/generate-goldens`, {
+    method: "POST",
+    body: form,
+    signal: controller.signal,
+  });
+  clearTimeout(timeout);
+  if (!res.ok) {
+    const body = await res.text().catch(() => "");
+    throw new Error(`Golden generation failed (${res.status}): ${body.slice(0, 200)}`);
+  }
+  if (!res.body) throw new Error("No response body");
+
+  const reader = res.body.getReader();
+  const decoder = new TextDecoder();
+  let buffer = "";
+  let currentEvent = "";
+
+  while (true) {
+    const { value, done } = await reader.read();
+    if (done) break;
+    buffer += decoder.decode(value, { stream: true });
+    const lines = buffer.split("\n");
+    buffer = lines.pop() || "";
+
+    for (const line of lines) {
+      if (line.startsWith("event: ")) {
+        currentEvent = line.replace("event: ", "").trim();
+      } else if (line.startsWith("data: ")) {
+        const data = line.replace("data: ", "");
+        if (currentEvent === "done") {
+          try {
+            const parsed = JSON.parse(data);
+            return parsed as GoldenGenerationResult;
+          } catch {
+            return null;
+          }
+        }
+        if (currentEvent === "error") {
+          try {
+            const parsed = JSON.parse(data);
+            throw new Error(parsed.message || "Golden generation failed");
           } catch (e) {
             throw e;
           }

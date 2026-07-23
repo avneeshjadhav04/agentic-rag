@@ -249,3 +249,59 @@ def load_latest_results() -> Optional[dict]:
         return None
     with open(files[0], "r", encoding="utf-8") as f:
         return json.load(f)
+
+
+def generate_goldens_streaming(
+    emb_cfg: dict,
+    eval_cfg: dict,
+    progress_callback: Optional[Callable[[dict], None]] = None,
+) -> dict:
+    """Synthesize ~20 goldens from the live Chroma store and write golden_dataset.json.
+
+    Emits stage-level progress via progress_callback since the DeepEval
+    Synthesizer does not emit per-golden progress callbacks.
+
+    Returns {count, path} on completion. Raises on error (e.g. empty Chroma store).
+    """
+    if progress_callback:
+        progress_callback({"stage": "reading_chroma", "message": "Reading chunks from Chroma store…"})
+
+    from app.models.factory import get_embeddings
+    from app.vectorstore.chroma_store import ChromaStore
+
+    embeddings = get_embeddings(emb_cfg["base_url"], emb_cfg["model"], emb_cfg["api_key"])
+    store = ChromaStore(embeddings=embeddings)
+    collection = store._get_store()._collection
+    results = collection.get(include=["documents"])
+    docs = results.get("documents", [])
+    if not docs:
+        raise ValueError("Chroma store is empty. Ingest documents first (via the UI or API).")
+
+    if progress_callback:
+        progress_callback({"stage": "synthesizing", "message": f"Synthesizing goldens from {len(docs)} chunks (this may take a few minutes)…"})
+
+    from deepeval.synthesizer import Synthesizer
+
+    judge = NvidiaNimJudge(eval_cfg["base_url"], eval_cfg["model"], eval_cfg["api_key"])
+    synthesizer = Synthesizer(model=judge)
+    synthesizer.generate_goldens_from_docs(
+        contexts=docs,
+        num_goldens=20,
+    )
+
+    goldens = []
+    for golden in synthesizer.goldens:
+        goldens.append({
+            "input": golden.input,
+            "expected_output": golden.expected_output,
+            "expected_context": list(golden.context) if golden.context else [],
+        })
+
+    GOLDEN_DATASET_PATH.parent.mkdir(parents=True, exist_ok=True)
+    with open(GOLDEN_DATASET_PATH, "w", encoding="utf-8") as f:
+        json.dump(goldens, f, indent=2, ensure_ascii=False)
+
+    if progress_callback:
+        progress_callback({"stage": "done", "message": f"Wrote {len(goldens)} goldens."})
+
+    return {"count": len(goldens), "path": str(GOLDEN_DATASET_PATH)}

@@ -4,9 +4,9 @@ Usage:
     cd backend
     python -m tests.eval.generate_goldens
 
-This reads chunks already ingested into your Chroma vector store, feeds them to
-DeepEval's Synthesizer to produce ~20 question/answer/context goldens, and writes
-golden_dataset.json next to this file.
+This is a thin CLI wrapper around app.eval.runner.generate_goldens_streaming,
+which is also called by the POST /api/eval/generate-goldens SSE endpoint so the
+CLI and the UI share the same logic.
 
 The dataset uses the *evaluation* provider as the synthesizer LLM (so synthetic
 Q&A generation is decoupled from the generation model being evaluated).
@@ -14,67 +14,27 @@ Q&A generation is decoupled from the generation model being evaluated).
 Curate the output before committing — these goldens are the ground truth for all
 RAG metrics in test_rag_e2e.py and test_rag_components.py.
 """
-import json
 import sys
-from pathlib import Path
 
-from app.eval.runner import embedding_config, evaluation_config
-
-OUTPUT_PATH = Path(__file__).parent / "golden_dataset.json"
-
-
-def load_contexts_from_chroma() -> list[str]:
-    """Read text chunks from the live Chroma store."""
-    from app.models.factory import get_embeddings
-    from app.vectorstore.chroma_store import ChromaStore
-
-    emb_cfg = embedding_config()
-    embeddings = get_embeddings(emb_cfg["base_url"], emb_cfg["model"], emb_cfg["api_key"])
-    store = ChromaStore(embeddings=embeddings)
-    collection = store._get_store()._collection
-    results = collection.get(include=["documents"])
-    docs = results.get("documents", [])
-    if not docs:
-        print("Chroma store is empty. Ingest documents first (via the UI or API).")
-        sys.exit(1)
-    print(f"Loaded {len(docs)} chunks from Chroma.")
-    return docs
-
-
-def build_synthesizer():
-    """Construct a DeepEval Synthesizer using the evaluation provider's LLM."""
-    from deepeval.synthesizer import Synthesizer
-
-    from app.eval.runner import NvidiaNimJudge
-
-    eval_cfg = evaluation_config()
-    judge = NvidiaNimJudge(eval_cfg["base_url"], eval_cfg["model"], eval_cfg["api_key"])
-    return Synthesizer(model=judge)
+from app.eval.runner import embedding_config, evaluation_config, generate_goldens_streaming
 
 
 def main():
-    contexts = load_contexts_from_chroma()
-    synthesizer = build_synthesizer()
+    emb_cfg = embedding_config()
+    eval_cfg = evaluation_config()
 
-    print("Synthesizing goldens (this may take a few minutes)...")
-    synthesizer.generate_goldens_from_docs(
-        contexts=contexts,
-        num_goldens=20,
-    )
+    def progress_callback(result: dict) -> None:
+        stage = result.get("stage", "")
+        message = result.get("message", "")
+        print(f"[{stage}] {message}")
 
-    goldens = []
-    for golden in synthesizer.goldens:
-        goldens.append({
-            "input": golden.input,
-            "expected_output": golden.expected_output,
-            "expected_context": list(golden.context) if golden.context else [],
-        })
-
-    with open(OUTPUT_PATH, "w", encoding="utf-8") as f:
-        json.dump(goldens, f, indent=2, ensure_ascii=False)
-
-    print(f"Wrote {len(goldens)} goldens to {OUTPUT_PATH}")
-    print("Review and curate before committing.")
+    try:
+        result = generate_goldens_streaming(emb_cfg, eval_cfg, progress_callback=progress_callback)
+        print(f"Wrote {result['count']} goldens to {result['path']}")
+        print("Review and curate before committing.")
+    except ValueError as e:
+        print(str(e))
+        sys.exit(1)
 
 
 if __name__ == "__main__":
