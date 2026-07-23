@@ -36,6 +36,15 @@ function GoldenRow({ golden, index }: { golden: GoldenResult; index: number }) {
     setTimeout(() => setCopied(false), 2000);
   };
 
+  const fieldBlock = (label: string, value: string) => (
+    <div>
+      <p className={labelClass}>{label}</p>
+      <p className="font-mono text-[11px] text-text whitespace-pre-wrap leading-relaxed mt-1">
+        {value}
+      </p>
+    </div>
+  );
+
   const passedCount = golden.metrics.filter((m) => m.passed).length;
   const totalMetrics = golden.metrics.length;
 
@@ -76,7 +85,12 @@ function GoldenRow({ golden, index }: { golden: GoldenResult; index: number }) {
               )}
             </button>
           </div>
-          <div className="space-y-2">
+          <div className="space-y-3">
+            {fieldBlock("Question", golden.input)}
+            {golden.expected_output && fieldBlock("Expected Output", golden.expected_output)}
+            {fieldBlock("Answer", golden.actual_output)}
+          </div>
+          <div className="space-y-2 mt-3">
             {golden.metrics.map((m: MetricResult, mi: number) => (
               <div key={mi} className="border border-line bg-panel px-3 py-2">
                 <div className="flex items-center justify-between">
