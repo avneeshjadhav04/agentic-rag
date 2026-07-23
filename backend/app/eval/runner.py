@@ -291,14 +291,14 @@ def generate_goldens_streaming(
     from deepeval.synthesizer import Synthesizer
 
     judge = NvidiaNimJudge(eval_cfg["base_url"], eval_cfg["model"], eval_cfg["api_key"])
-    synthesizer = Synthesizer(model=judge, async_mode=False)
-    synthesizer.generate_goldens_from_contexts(
+    synthesizer = Synthesizer(model=judge, async_mode=True, max_concurrent=3)
+    goldens_list = synthesizer.generate_goldens_from_contexts(
         contexts=[[d] for d in docs],
         max_goldens_per_context=1,
     )
 
     goldens = []
-    for golden in synthesizer.synthetic_goldens:
+    for golden in goldens_list:
         goldens.append({
             "input": golden.input,
             "expected_output": golden.expected_output,

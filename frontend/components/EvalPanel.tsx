@@ -124,6 +124,7 @@ export default function EvalPanel() {
   const [messageType, setMessageType] = useState<"info" | "warn" | "error">("info");
   const [progressCount, setProgressCount] = useState(0);
   const [genStage, setGenStage] = useState("");
+  const [elapsed, setElapsed] = useState(0);
 
   const refreshResults = useCallback(async () => {
     setLoadingResults(true);
@@ -144,6 +145,12 @@ export default function EvalPanel() {
     const timer = setTimeout(() => setMessage(""), 10000);
     return () => clearTimeout(timer);
   }, [message]);
+
+  useEffect(() => {
+    if (!generating) return;
+    const interval = setInterval(() => setElapsed((e) => e + 1), 1000);
+    return () => clearInterval(interval);
+  }, [generating]);
 
   const handleRun = async () => {
     setRunning(true);
@@ -176,6 +183,7 @@ export default function EvalPanel() {
     setGenerating(true);
     setMessage("");
     setGenStage("Starting…");
+    setElapsed(0);
     try {
       const generator = streamGenerateGoldens(effectiveEvaluation, effectiveEmbedding);
       let result = await generator.next();
@@ -212,7 +220,7 @@ export default function EvalPanel() {
         <button
           onClick={handleGenerate}
           disabled={generating || running}
-          className={btnOutline}
+          className={btnPrimary}
         >
           {generating ? (
             <>
@@ -228,7 +236,7 @@ export default function EvalPanel() {
         </button>
         {generating && (
           <p className="font-mono text-[10px] uppercase tracking-widest text-muted">
-            Synthesizing Q&A pairs from your ingested documents…
+            Generating goldens… {elapsed}s elapsed
           </p>
         )}
       </section>
