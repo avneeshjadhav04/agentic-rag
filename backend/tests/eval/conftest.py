@@ -36,12 +36,3 @@ def golden_dataset() -> list[dict]:
         return load_golden_dataset()
     except (FileNotFoundError, ValueError) as e:
         pytest.skip(str(e))
-
-
-@pytest.fixture
-def golden(request, golden_dataset) -> dict:
-    """Single golden, selected by index via --golden-idx or 0 by default."""
-    idx = getattr(request, "param", 0)
-    if idx >= len(golden_dataset):
-        pytest.skip(f"Golden index {idx} out of range (dataset has {len(golden_dataset)} entries).")
-    return golden_dataset[idx]

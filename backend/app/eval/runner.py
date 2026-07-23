@@ -9,6 +9,7 @@ This module owns the canonical implementations of:
 """
 import json
 import os
+import re
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Callable, List, Optional
@@ -27,13 +28,38 @@ from app.agents.graph import build_agentic_rag_graph
 from app.models.factory import get_embeddings, get_generation_llm
 from app.vectorstore.chroma_store import ChromaStore
 
-EVAL_DIR = Path(__file__).resolve().parent.parent.parent / "tests" / "eval"
+# Resolve everything relative to the backend root (the directory above this
+# package's parent) so results land in the same place regardless of the CWD
+# uvicorn / pytest / the CLI wrapper was launched from.
+_BACKEND_ROOT = Path(__file__).resolve().parent.parent.parent
+EVAL_DIR = _BACKEND_ROOT / "tests" / "eval"
 GOLDEN_DATASET_PATH = EVAL_DIR / "golden_dataset.json"
-DEFAULT_RESULTS_DIR = str(Path(__file__).resolve().parent.parent.parent / ".deepeval")
+DEFAULT_RESULTS_DIR = str(_BACKEND_ROOT / ".deepeval")
+
+# Maximum number of goldens to synthesize from the Chroma store, keeping
+# golden generation and downstream evaluation bounded regardless of corpus size.
+MAX_GOLDENS = 20
 
 
 def _env(name: str, fallback: str = "") -> str:
     return os.environ.get(name, fallback)
+
+
+def _resolve_results_dir() -> Path:
+    """Resolve the results directory to an absolute path.
+
+    - Unset env var -> the absolute <backend>/.deepeval default (resolved from
+      this package's location, so it's correct regardless of the launch CWD).
+    - Set env var -> honored literally: absolute paths used as-is, relative
+      paths resolved against the process CWD (standard env-var semantics).
+      See .env.example for the caveat when uvicorn is launched from backend/.
+
+    This ensures the SSE/programmatic runner (which writes eval_*.json) and
+    the `deepeval test run` CLI (which writes test_run_*.json via DeepEval
+    itself) read/write the same directory regardless of the launch CWD.
+    """
+    folder = _env("DEEPEVAL_RESULTS_FOLDER", DEFAULT_RESULTS_DIR)
+    return Path(folder).resolve()
 
 
 def generation_config() -> dict:
@@ -178,7 +204,7 @@ def run_evals_streaming(
             input=question,
             expected_output=expected,
             actual_output=actual_output,
-            retrieval_context=retrieval_context if retrieval_context else ["No context retrieved."],
+            retrieval_context=retrieval_context,
         )
 
         for m in metrics:
@@ -231,7 +257,7 @@ def run_evals_streaming(
 
 def _persist_summary(summary: dict) -> None:
     """Write the summary as a timestamped JSON file in the results directory."""
-    results_dir = Path(_env("DEEPEVAL_RESULTS_FOLDER", DEFAULT_RESULTS_DIR))
+    results_dir = _resolve_results_dir()
     results_dir.mkdir(parents=True, exist_ok=True)
     ts = datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%SZ")
     out_path = results_dir / f"eval_{ts}.json"
@@ -239,16 +265,110 @@ def _persist_summary(summary: dict) -> None:
         json.dump(summary, f, indent=2, ensure_ascii=False)
 
 
+_TS_RE = re.compile(r"(\d{8}T\d{6}Z)")
+
+
+def _result_sort_key(p: Path) -> float:
+    """Sort key (newest first) derived from the timestamp embedded in the name.
+
+    Both writers use a UTC `%Y%m%dT%H%M%SZ` timestamp (eval_<ts>.json from this
+    runner, test_run_<ts>.json from DeepEval CLI), so we sort by that rather
+    than the raw filename — otherwise lexicographic order would rank
+    `test_run_...` above `eval_...` regardless of when each was written.
+    Files without a parseable timestamp fall back to the file's mtime.
+    """
+    m = _TS_RE.search(p.stem)
+    if m:
+        try:
+            return datetime.strptime(m.group(1), "%Y%m%dT%H%M%SZ").replace(tzinfo=timezone.utc).timestamp()
+        except ValueError:
+            pass
+    return p.stat().st_mtime
+
+
+def _result_files(results_dir: Path) -> List[Path]:
+    """All eval result JSONs in the dir, newest first.
+
+    Two writers produce results here:
+      - this runner's SSE/programmatic path  -> eval_<ts>.json
+      - `deepeval test run` (the CLI wrapper) -> test_run_<ts>.json
+    Both are surfaced so the UI reflects whichever path produced the latest run.
+    """
+    return sorted(
+        list(results_dir.glob("eval_*.json")) + list(results_dir.glob("test_run_*.json")),
+        key=_result_sort_key,
+        reverse=True,
+    )
+
+
+def _normalize_test_run(data: dict) -> dict:
+    """Convert a DeepEval `test_run_*.json` into the SSE summary shape.
+
+    DeepEval's CLI writes testCases + metricsScores with camelCase aliases;
+    the SSE runner (and the frontend) expect {total, passed, metric_averages,
+    goldens}. This normalizer bridges the two so load_latest_results always
+    returns one shape regardless of which path produced the latest file.
+    """
+    goldens: List[dict] = []
+    for tc in data.get("testCases", []) or []:
+        metrics = []
+        for md in tc.get("metricsData", []) or []:
+            metrics.append({
+                "name": md.get("name", ""),
+                "score": round(float(md["score"]), 4) if md.get("score") is not None else 0.0,
+                "threshold": float(md.get("threshold", 0.5)),
+                "passed": bool(md.get("success", False)),
+                "reason": md.get("reason", "") or "",
+            })
+        goldens.append({
+            "input": tc.get("input", ""),
+            "expected_output": tc.get("expectedOutput", ""),
+            "actual_output": tc.get("actualOutput", ""),
+            "metrics": metrics,
+            "passed": bool(tc.get("success", False)) if metrics else True,
+        })
+
+    metric_averages: List[dict] = []
+    for ms in data.get("metricsScores", []) or []:
+        scores = ms.get("scores", []) or []
+        passes = int(ms.get("passes", 0))
+        n = len(scores) if scores else (passes + int(ms.get("fails", 0)))
+        metric_averages.append({
+            "name": ms.get("metric", ""),
+            "avg_score": round(sum(scores) / len(scores), 4) if scores else 0.0,
+            "pass_rate": round(passes / n, 4) if n else 0.0,
+        })
+
+    total = len(goldens)
+    passed = sum(1 for g in goldens if g["passed"])
+    return {
+        "total": total,
+        "passed": passed,
+        "metric_averages": metric_averages,
+        "goldens": goldens,
+        "run_at": datetime.now(timezone.utc).isoformat(),
+        "source": "deepeval-cli",
+    }
+
+
 def load_latest_results() -> Optional[dict]:
-    """Read the most recent eval_*.json from the results directory, or None."""
-    results_dir = Path(_env("DEEPEVAL_RESULTS_FOLDER", DEFAULT_RESULTS_DIR))
+    """Read the most recent result JSON from the results directory, or None.
+
+    Covers both the SSE runner's `eval_*.json` (already in summary shape) and
+    DeepEval CLI's `test_run_*.json` (normalized to the same shape). DeepEval
+    CLI files are identified by the presence of a `testCases` key.
+    """
+    results_dir = _resolve_results_dir()
     if not results_dir.exists():
         return None
-    files = sorted(results_dir.glob("eval_*.json"), key=lambda p: p.name, reverse=True)
+    files = _result_files(results_dir)
     if not files:
         return None
     with open(files[0], "r", encoding="utf-8") as f:
-        return json.load(f)
+        data = json.load(f)
+    if isinstance(data, dict) and "testCases" in data:
+        return _normalize_test_run(data)
+    return data
 
 
 def generate_goldens_streaming(
@@ -256,7 +376,13 @@ def generate_goldens_streaming(
     eval_cfg: dict,
     progress_callback: Optional[Callable[[dict], None]] = None,
 ) -> dict:
-    """Synthesize ~20 goldens from the live Chroma store and write golden_dataset.json.
+    """Synthesize up to MAX_GOLDENS goldens from the live Chroma store.
+
+    The store may contain hundreds of chunks; synthesizing one golden per
+    chunk (and then running the full RAG graph + 4 LLM-judge metrics per
+    golden in run_evals_streaming) scales linearly with corpus size. To keep
+    generation and evaluation bounded, the chunks are deterministically
+    sampled down to MAX_GOLDENS before synthesis.
 
     Emits stage-level progress via progress_callback since the DeepEval
     Synthesizer does not emit per-golden progress callbacks.
@@ -285,13 +411,22 @@ def generate_goldens_streaming(
     if not docs:
         raise ValueError("Chroma store is empty. Ingest documents first (via the UI or API).")
 
+    if len(docs) > MAX_GOLDENS:
+        stride = len(docs) / MAX_GOLDENS
+        docs = [docs[int(i * stride)] for i in range(MAX_GOLDENS)]
+
     if progress_callback:
-        progress_callback({"stage": "synthesizing", "message": f"Synthesizing goldens from {len(docs)} chunks (this may take a few minutes)…"})
+        progress_callback({"stage": "synthesizing", "message": f"Synthesizing up to {len(docs)} goldens (this may take a few minutes)…"})
 
     from deepeval.synthesizer import Synthesizer
 
     judge = NvidiaNimJudge(eval_cfg["base_url"], eval_cfg["model"], eval_cfg["api_key"])
-    synthesizer = Synthesizer(model=judge, async_mode=True, max_concurrent=2)
+    # async_mode=False: generate_goldens_from_contexts() internally calls
+    # loop.run_until_complete(...); under async_mode=True that requires
+    # nest_asyncio patching of a running loop when this function is invoked
+    # via asyncio.to_thread (the SSE path). The sync code path avoids that
+    # fragility entirely while still producing the same goldens.
+    synthesizer = Synthesizer(model=judge, async_mode=False)
     goldens_list = synthesizer.generate_goldens_from_contexts(
         contexts=[[d] for d in docs],
         max_goldens_per_context=1,
@@ -302,7 +437,6 @@ def generate_goldens_streaming(
         goldens.append({
             "input": golden.input,
             "expected_output": golden.expected_output,
-            "expected_context": list(golden.context) if golden.context else [],
         })
 
     GOLDEN_DATASET_PATH.parent.mkdir(parents=True, exist_ok=True)

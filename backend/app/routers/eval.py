@@ -26,12 +26,24 @@ async def _stream_threaded(
     target must accept a single progress_callback argument and return a dict summary.
     The generator emits SSE 'progress' events for each callback invocation, then a
     'done' event with the summary, or an 'error' event on failure.
+
+    On client disconnect the blocking thread cannot be force-cancelled (Python
+    threads are not interruptible), so it runs to completion; but the callback
+    becomes a no-op and the queue is drained in finally to avoid unbounded
+    memory growth and needless work on a closed event loop.
     """
-    progress_queue: asyncio.Queue = asyncio.Queue()
+    progress_queue: asyncio.Queue = asyncio.Queue(maxsize=128)
     loop = asyncio.get_running_loop()
+    client_gone = False
 
     def progress_callback(result: dict) -> None:
-        loop.call_soon_threadsafe(progress_queue.put_nowait, result)
+        if client_gone:
+            return
+        try:
+            loop.call_soon_threadsafe(progress_queue.put_nowait, result)
+        except RuntimeError:
+            # Loop closed after disconnect — drop the progress event.
+            pass
 
     def run_in_thread():
         try:
@@ -58,8 +70,16 @@ async def _stream_threaded(
     except Exception as e:
         yield f"event: error\ndata: {json.dumps({'message': str(e)})}\n\n"
     finally:
+        client_gone = True
         if not task.done():
             task.cancel()
+        # Drain any items the thread enqueued before noticing client_gone,
+        # so they don't pile up after the generator returns.
+        while not progress_queue.empty():
+            try:
+                progress_queue.get_nowait()
+            except asyncio.QueueEmpty:
+                break
 
 
 @router.post("/run")

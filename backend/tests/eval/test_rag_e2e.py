@@ -29,7 +29,7 @@ def _make_test_case(question, expected_output, actual_output, retrieval_context)
         input=question,
         expected_output=expected_output,
         actual_output=actual_output,
-        retrieval_context=retrieval_context if retrieval_context else ["No context retrieved."],
+        retrieval_context=retrieval_context,
     )
 
 

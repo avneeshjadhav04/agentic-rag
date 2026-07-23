@@ -1,12 +1,15 @@
-"""Component-level RAG evaluation with DeepEval + LangGraph callbacks.
+"""Component-level RAG evaluation with DeepEval.
 
-Wraps the LangGraph invocation with DeepEval's CallbackHandler to produce
-per-span traces, then scores:
-  - the `generate` node's LLM span with AnswerRelevancyMetric
-  - the `retrieve` node's span with ContextualRelevancyMetric
+Scores two components of the Agentic RAG pipeline over the golden dataset:
+  - the `generate` node's output via AnswerRelevancyMetric
+  - the `retrieve` node's output via ContextualRelevancyMetric
 
-This produces per-node scores aligned with the 7 trace steps already shown
-in the frontend TraceChain UI.
+Both metrics are scored on the same final LLMTestCase (input, actual_output,
+retrieval_context) produced by a single graph invocation. DeepEval's
+LangGraph callback/tracing integration was previously wired in here but had
+no effect on the scores (the metrics were measured manually afterward), so
+it has been removed to avoid implying per-node trace-scoped scoring that was
+not actually happening.
 """
 import pytest
 from deepeval.metrics import AnswerRelevancyMetric, ContextualRelevancyMetric
@@ -16,9 +19,6 @@ from app.eval.runner import run_graph_for_question
 
 
 def test_rag_component_level(golden_dataset, rag_graph, judge_llm):
-    from deepeval.integrations.langchain import CallbackHandler
-    from deepeval.tracing import next_llm_span
-
     failures = []
     for golden in golden_dataset:
         question = golden["input"]
@@ -27,24 +27,7 @@ def test_rag_component_level(golden_dataset, rag_graph, judge_llm):
         answer_relevancy = AnswerRelevancyMetric(threshold=0.5, model=judge_llm)
         context_relevancy = ContextualRelevancyMetric(threshold=0.5, model=judge_llm)
 
-        handler = CallbackHandler(metrics=[context_relevancy])
-
-        with next_llm_span(metrics=[answer_relevancy]):
-            final_state = rag_graph.invoke(
-                {
-                    "question": question,
-                    "messages": [],
-                    "documents": [],
-                    "web_search_urls": [],
-                    "generation": None,
-                    "trace": [],
-                    "steps": 0,
-                    "web_search_enabled": False,
-                    "max_loops": 3,
-                },
-                config={"callbacks": [handler]},
-            )
-
+        final_state = run_graph_for_question(rag_graph, question)
         actual_output = final_state.get("generation", "")
         docs = final_state.get("documents", [])
         retrieval_context = [d["content"] for d in docs] if docs else []
@@ -53,7 +36,7 @@ def test_rag_component_level(golden_dataset, rag_graph, judge_llm):
             input=question,
             expected_output=expected,
             actual_output=actual_output,
-            retrieval_context=retrieval_context if retrieval_context else ["No context retrieved."],
+            retrieval_context=retrieval_context,
         )
 
         try:
