@@ -182,7 +182,7 @@ export default function EvalPanel() {
   const handleGenerate = async () => {
     setGenerating(true);
     setMessage("");
-    setGenStage("Starting…");
+    setGenStage("Generating…");
     setElapsed(0);
     try {
       const generator = streamGenerateGoldens(effectiveEvaluation, effectiveEmbedding);
@@ -236,7 +236,7 @@ export default function EvalPanel() {
         </button>
         {generating && (
           <p className="font-mono text-[10px] uppercase tracking-widest text-muted">
-            Generating goldens… {elapsed}s elapsed
+            Generating goldens… {elapsed}s
           </p>
         )}
       </section>
