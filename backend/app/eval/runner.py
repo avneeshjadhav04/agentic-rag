@@ -391,7 +391,7 @@ async def generate_goldens_streaming(
     judge = NvidiaNimJudge(eval_cfg["base_url"], eval_cfg["model"], eval_cfg["api_key"])
     synthesizer = Synthesizer(model=judge, async_mode=True)
     try:
-        generated = await synthesizer.a_generate_goldens_from_contexts(
+        await synthesizer.a_generate_goldens_from_contexts(
             contexts=[[d] for d in docs],
             max_goldens_per_context=1,
         )
@@ -399,11 +399,8 @@ async def generate_goldens_streaming(
         yield {"type": "error", "message": f"Synthesizer failed: {e}"}
         return
 
-    # DeepEval 4.1.3 bug: a_generate_goldens_from_contexts() returns the goldens
-    # list but does NOT assign it to self.synthetic_goldens (unlike the sync
-    # version). Use the return value instead of synthesizer.synthetic_goldens.
     goldens = []
-    for golden in generated:
+    for golden in synthesizer.synthetic_goldens:
         goldens.append({
             "input": golden.input,
             "expected_output": golden.expected_output,
