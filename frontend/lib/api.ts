@@ -194,8 +194,6 @@ export async function* streamChat(
             yield { type: "token", value: data };
           }
         }
-      } else if (line.trim() === "") {
-        currentEvent = "";
       }
     }
   }
@@ -282,8 +280,6 @@ export async function* streamEvalRun(
         if (currentEvent === "progress") {
           yield { type: "progress", value: JSON.parse(data) };
         }
-      } else if (line.trim() === "") {
-        currentEvent = "";
       }
     }
     if (done) break;
@@ -359,8 +355,6 @@ export async function* streamGenerateGoldens(
         if (currentEvent === "progress") {
           yield { type: "progress", value: JSON.parse(data) };
         }
-      } else if (line.trim() === "") {
-        currentEvent = "";
       }
     }
     if (done) break;
