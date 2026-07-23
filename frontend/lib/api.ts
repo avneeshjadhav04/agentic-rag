@@ -252,8 +252,9 @@ export async function* streamEvalRun(
 
   while (true) {
     const { value, done } = await reader.read();
-    if (done) break;
-    buffer += decoder.decode(value, { stream: true });
+    if (value) {
+      buffer += decoder.decode(value, { stream: !done });
+    }
     const lines = buffer.split("\n");
     buffer = lines.pop() || "";
 
@@ -285,6 +286,7 @@ export async function* streamEvalRun(
         currentEvent = "";
       }
     }
+    if (done) break;
   }
 
   return null;
@@ -327,8 +329,9 @@ export async function* streamGenerateGoldens(
 
   while (true) {
     const { value, done } = await reader.read();
-    if (done) break;
-    buffer += decoder.decode(value, { stream: true });
+    if (value) {
+      buffer += decoder.decode(value, { stream: !done });
+    }
     const lines = buffer.split("\n");
     buffer = lines.pop() || "";
 
@@ -360,6 +363,7 @@ export async function* streamGenerateGoldens(
         currentEvent = "";
       }
     }
+    if (done) break;
   }
 
   return null;
