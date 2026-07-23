@@ -215,25 +215,35 @@ export default function EvalPanel() {
 
   return (
     <div className="space-y-6">
-      {/* Generate Goldens button */}
+      {/* Step I: Ingest (text only — points to the Ingestion section above) */}
+      <section>
+        <p className={labelClass}>
+          <span className="text-text">I.</span> Add/Ingest Documents
+        </p>
+      </section>
+
+      {/* Step II: Generate Goldens */}
       <section className="space-y-3">
-        <button
-          onClick={handleGenerate}
-          disabled={generating || running}
-          className={btnPrimary}
-        >
-          {generating ? (
-            <>
-              <Loader2 className="w-3.5 h-3.5 animate-spin" />
-              {genStage || "Generating…"}
-            </>
-          ) : (
-            <>
-              <Sparkles className="w-3.5 h-3.5" />
-              Generate Goldens
-            </>
-          )}
-        </button>
+        <div className="flex items-center gap-3">
+          <span className="font-mono text-[11px] uppercase tracking-widest text-text">II.</span>
+          <button
+            onClick={handleGenerate}
+            disabled={generating || running}
+            className={btnPrimary}
+          >
+            {generating ? (
+              <>
+                <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                {genStage || "Generating…"}
+              </>
+            ) : (
+              <>
+                <Sparkles className="w-3.5 h-3.5" />
+                Generate Goldens
+              </>
+            )}
+          </button>
+        </div>
         {generating && (
           <p className="font-mono text-[10px] uppercase tracking-widest text-muted">
             Generating goldens… {elapsed}s
@@ -241,21 +251,24 @@ export default function EvalPanel() {
         )}
       </section>
 
-      {/* Run button */}
+      {/* Step III: Run Evals */}
       <section className="space-y-3">
-        <button onClick={handleRun} disabled={running || generating} className={btnPrimary}>
-          {running ? (
-            <>
-              <Loader2 className="w-3.5 h-3.5 animate-spin" />
-              Running ({progressCount} done)
-            </>
-          ) : (
-            <>
-              <Play className="w-3.5 h-3.5" />
-              Run Evals
-            </>
-          )}
-        </button>
+        <div className="flex items-center gap-3">
+          <span className="font-mono text-[11px] uppercase tracking-widest text-text">III.</span>
+          <button onClick={handleRun} disabled={running || generating} className={btnPrimary}>
+            {running ? (
+              <>
+                <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                Running ({progressCount} done)
+              </>
+            ) : (
+              <>
+                <Play className="w-3.5 h-3.5" />
+                Run Evals
+              </>
+            )}
+          </button>
+        </div>
         {running && (
           <p className="font-mono text-[10px] uppercase tracking-widest text-muted">
             Streaming results as goldens complete…
