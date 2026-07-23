@@ -3,7 +3,7 @@
 import { useConfigStore } from "@/store/configStore";
 import { fetchEvalResults, fetchGoldensExist, streamEvalRun, streamGenerateGoldens } from "@/lib/api";
 import { useState, useEffect, useCallback, useMemo, useRef } from "react";
-import { Loader2, RefreshCw, Play, Plus, Minus, Copy, Check, Sparkles } from "lucide-react";
+import { Loader2, RefreshCw, Play, Plus, Minus, Copy, Check, Download, Sparkles } from "lucide-react";
 import { EvalSummary, GoldenResult, MetricResult } from "@/types";
 
 const labelClass = "font-mono text-[10px] uppercase tracking-widest text-muted";
@@ -226,6 +226,22 @@ export default function EvalPanel() {
     }
   };
 
+  const downloadResults = () => {
+    if (!summary) return;
+    const blob = new Blob([JSON.stringify(summary, null, 2)], { type: "application/json" });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url;
+    const ts = summary.run_at
+      ? new Date(summary.run_at).toISOString().replace(/[:.]/g, "-")
+      : Date.now();
+    a.download = `eval-results-${ts}.json`;
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+    URL.revokeObjectURL(url);
+  };
+
   const statusClass =
     messageType === "error"
       ? "text-text"
@@ -353,6 +369,14 @@ export default function EvalPanel() {
             ))}
           </div>
         </section>
+      )}
+
+      {/* Download complete results */}
+      {!running && summary && (
+        <button onClick={downloadResults} className={btnOutline}>
+          <Download className="w-3.5 h-3.5" />
+          Download Results
+        </button>
       )}
 
       {/* Empty state */}
