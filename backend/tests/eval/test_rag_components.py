@@ -24,8 +24,8 @@ def test_rag_component_level(golden_dataset, rag_graph, judge_llm):
         question = golden["input"]
         expected = golden.get("expected_output", "")
 
-        answer_relevancy = AnswerRelevancyMetric(threshold=0.5, model=judge_llm)
-        context_relevancy = ContextualRelevancyMetric(threshold=0.5, model=judge_llm)
+        answer_relevancy = AnswerRelevancyMetric(threshold=0.5, model=judge_llm, async_mode=False)
+        context_relevancy = ContextualRelevancyMetric(threshold=0.5, model=judge_llm, async_mode=False)
 
         final_state = run_graph_for_question(rag_graph, question)
         actual_output = final_state.get("generation", "")

@@ -44,16 +44,16 @@ def test_rag_end_to_end(golden_dataset, rag_graph, judge_llm):
         retrieval_context = [d["content"] for d in docs] if docs else []
 
         metrics = [
-            AnswerRelevancyMetric(threshold=0.5, model=judge_llm),
-            FaithfulnessMetric(threshold=0.5, model=judge_llm),
+            AnswerRelevancyMetric(threshold=0.5, model=judge_llm, async_mode=False),
+            FaithfulnessMetric(threshold=0.5, model=judge_llm, async_mode=False),
         ]
         if expected:
-            metrics.append(ContextualPrecisionMetric(threshold=0.5, model=judge_llm))
-            metrics.append(ContextualRecallMetric(threshold=0.5, model=judge_llm))
+            metrics.append(ContextualPrecisionMetric(threshold=0.5, model=judge_llm, async_mode=False))
+            metrics.append(ContextualRecallMetric(threshold=0.5, model=judge_llm, async_mode=False))
 
         test_case = _make_test_case(question, expected, actual_output, retrieval_context)
         try:
-            assert_test(test_case, metrics)
+            assert_test(test_case, metrics, run_async=False)
         except AssertionError as e:
             failures.append(f"Q: {question}\n  {e}")
 

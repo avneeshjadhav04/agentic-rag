@@ -193,12 +193,12 @@ def run_evals_streaming(
         retrieval_context = [d["content"] for d in docs] if docs else []
 
         metrics = [
-            AnswerRelevancyMetric(threshold=0.5, model=judge),
-            FaithfulnessMetric(threshold=0.5, model=judge),
+            AnswerRelevancyMetric(threshold=0.5, model=judge, async_mode=False),
+            FaithfulnessMetric(threshold=0.5, model=judge, async_mode=False),
         ]
         if expected:
-            metrics.append(ContextualPrecisionMetric(threshold=0.5, model=judge))
-            metrics.append(ContextualRecallMetric(threshold=0.5, model=judge))
+            metrics.append(ContextualPrecisionMetric(threshold=0.5, model=judge, async_mode=False))
+            metrics.append(ContextualRecallMetric(threshold=0.5, model=judge, async_mode=False))
 
         test_case = LLMTestCase(
             input=question,
