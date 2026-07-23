@@ -17,6 +17,17 @@ from app.eval.runner import generate_goldens_streaming, load_latest_results, run
 
 router = APIRouter(prefix="/api/eval", tags=["eval"])
 
+# SSE anti-buffering headers. The eval endpoints emit one event per golden,
+# minutes apart; without these a PaaS reverse proxy (Railway, nginx, etc.)
+# buffers the idle connection and the browser only sees the final `done`
+# event after the socket closes. X-Accel-Buffering: no is the de-facto
+# standard hint that switches such proxies to streaming/flush mode.
+SSE_HEADERS = {
+    "Cache-Control": "no-cache, no-transform",
+    "X-Accel-Buffering": "no",
+    "Connection": "keep-alive",
+}
+
 
 async def _stream_threaded(
     target: Callable[[Callable[[dict], None]], dict],
@@ -101,7 +112,7 @@ async def eval_run(
     def target(progress_callback: Callable[[dict], None]) -> dict:
         return run_evals_streaming(gen_cfg, eval_cfg, emb_cfg, progress_callback=progress_callback)
 
-    return StreamingResponse(_stream_threaded(target), media_type="text/event-stream")
+    return StreamingResponse(_stream_threaded(target), media_type="text/event-stream", headers=SSE_HEADERS)
 
 
 @router.post("/generate-goldens")
@@ -119,7 +130,7 @@ async def eval_generate_goldens(
     def target(progress_callback: Callable[[dict], None]) -> dict:
         return generate_goldens_streaming(emb_cfg, eval_cfg, progress_callback=progress_callback)
 
-    return StreamingResponse(_stream_threaded(target), media_type="text/event-stream")
+    return StreamingResponse(_stream_threaded(target), media_type="text/event-stream", headers=SSE_HEADERS)
 
 
 @router.get("/results")
