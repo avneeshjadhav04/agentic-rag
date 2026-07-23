@@ -266,6 +266,14 @@ def generate_goldens_streaming(
     if progress_callback:
         progress_callback({"stage": "reading_chroma", "message": "Reading chunks from Chroma store…"})
 
+    for cfg_name, cfg in [("embedding", emb_cfg), ("evaluation", eval_cfg)]:
+        if not cfg.get("base_url") or not cfg.get("model"):
+            raise ValueError(
+                f"{cfg_name} provider base_url and model are required. "
+                f"Got base_url='{cfg.get('base_url', '')}', model='{cfg.get('model', '')}'. "
+                "Configure the evaluation and embedding providers in the sidebar."
+            )
+
     from app.models.factory import get_embeddings
     from app.vectorstore.chroma_store import ChromaStore
 
@@ -290,7 +298,7 @@ def generate_goldens_streaming(
     )
 
     goldens = []
-    for golden in synthesizer.goldens:
+    for golden in synthesizer.synthetic_goldens:
         goldens.append({
             "input": golden.input,
             "expected_output": golden.expected_output,

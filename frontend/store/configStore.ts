@@ -2,6 +2,37 @@ import { ProviderField } from "@/types";
 import { create } from "zustand";
 import { persist } from "zustand/middleware";
 
+const HARDCODED_GENERATION_DEFAULTS: ProviderField = {
+  provider: "nvidia-nim",
+  baseUrl: "https://integrate.api.nvidia.com/v1",
+  model: "openai/gpt-oss-20b",
+  apiKey: "",
+};
+
+const HARDCODED_EVALUATION_DEFAULTS: ProviderField = {
+  provider: "nvidia-nim",
+  baseUrl: "https://integrate.api.nvidia.com/v1",
+  model: "openai/gpt-oss-20b",
+  apiKey: "",
+};
+
+const HARDCODED_EMBEDDING_DEFAULTS: ProviderField = {
+  provider: "nvidia-nim",
+  baseUrl: "https://integrate.api.nvidia.com/v1",
+  model: "nvidia/nemotron-3-embed-1b",
+  apiKey: "",
+};
+
+function mergeDefaults(stored: any, hardcoded: ProviderField): ProviderField {
+  if (!stored || typeof stored !== "object") return { ...hardcoded };
+  return {
+    provider: stored.provider || hardcoded.provider,
+    baseUrl: stored.baseUrl || hardcoded.baseUrl,
+    model: stored.model || hardcoded.model,
+    apiKey: stored.apiKey || "",
+  };
+}
+
 const configStorage = {
   getItem: (name: string) => {
     const raw = localStorage.getItem(name);
@@ -12,12 +43,9 @@ const configStorage = {
         parsed.state.generation = parsed.state.chat;
         delete parsed.state.chat;
       }
-      if (!parsed.state.generation) parsed.state.generation = {} as ProviderField;
-      if (!parsed.state.generation.apiKey) parsed.state.generation.apiKey = "";
-      if (!parsed.state.evaluation) parsed.state.evaluation = {} as ProviderField;
-      if (!parsed.state.evaluation.apiKey) parsed.state.evaluation.apiKey = "";
-      if (!parsed.state.embedding) parsed.state.embedding = {} as ProviderField;
-      if (!parsed.state.embedding.apiKey) parsed.state.embedding.apiKey = "";
+      parsed.state.generation = mergeDefaults(parsed.state.generation, HARDCODED_GENERATION_DEFAULTS);
+      parsed.state.evaluation = mergeDefaults(parsed.state.evaluation, HARDCODED_EVALUATION_DEFAULTS);
+      parsed.state.embedding = mergeDefaults(parsed.state.embedding, HARDCODED_EMBEDDING_DEFAULTS);
     }
     return parsed;
   },
@@ -31,26 +59,7 @@ const configStorage = {
   removeItem: (name: string) => localStorage.removeItem(name),
 };
 
-export const HARDCODED_GENERATION_DEFAULTS: ProviderField = {
-  provider: "nvidia-nim",
-  baseUrl: "https://integrate.api.nvidia.com/v1",
-  model: "openai/gpt-oss-20b",
-  apiKey: "",
-};
-
-export const HARDCODED_EVALUATION_DEFAULTS: ProviderField = {
-  provider: "nvidia-nim",
-  baseUrl: "https://integrate.api.nvidia.com/v1",
-  model: "openai/gpt-oss-20b",
-  apiKey: "",
-};
-
-export const HARDCODED_EMBEDDING_DEFAULTS: ProviderField = {
-  provider: "nvidia-nim",
-  baseUrl: "https://integrate.api.nvidia.com/v1",
-  model: "nvidia/nemotron-3-embed-1b",
-  apiKey: "",
-};
+export { HARDCODED_GENERATION_DEFAULTS, HARDCODED_EVALUATION_DEFAULTS, HARDCODED_EMBEDDING_DEFAULTS };
 
 export interface ConfigState {
   generation: ProviderField;
