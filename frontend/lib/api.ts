@@ -209,6 +209,13 @@ export async function fetchEvalResults(): Promise<EvalSummary | null> {
   return data as EvalSummary;
 }
 
+export async function fetchGoldensExist(): Promise<boolean> {
+  const res = await fetch(`${API_BASE}/api/eval/goldens-exists`);
+  if (!res.ok) return false;
+  const data = await res.json();
+  return Boolean(data.exists);
+}
+
 export async function* streamEvalRun(
   generation: ProviderField,
   evaluation: ProviderField,

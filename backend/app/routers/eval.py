@@ -13,7 +13,7 @@ from typing import AsyncGenerator, Callable
 from fastapi import APIRouter, Form
 from fastapi.responses import StreamingResponse
 
-from app.eval.runner import generate_goldens_streaming, load_latest_results, run_evals_streaming
+from app.eval.runner import generate_goldens_streaming, goldens_exist, load_latest_results, run_evals_streaming
 
 router = APIRouter(prefix="/api/eval", tags=["eval"])
 
@@ -139,3 +139,9 @@ async def eval_results():
     if results is None:
         return {"error": "No eval results found. Run evals first."}
     return results
+
+
+@router.get("/goldens-exists")
+async def eval_goldens_exists():
+    """Whether golden_dataset.json exists on disk (goldens have been generated)."""
+    return {"exists": goldens_exist()}

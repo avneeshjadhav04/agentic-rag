@@ -1,7 +1,7 @@
 "use client";
 
 import { useConfigStore } from "@/store/configStore";
-import { fetchEvalResults, streamEvalRun, streamGenerateGoldens } from "@/lib/api";
+import { fetchEvalResults, fetchGoldensExist, streamEvalRun, streamGenerateGoldens } from "@/lib/api";
 import { useState, useEffect, useCallback, useMemo, useRef } from "react";
 import { Loader2, RefreshCw, Play, Plus, Minus, Copy, Check, Sparkles } from "lucide-react";
 import { EvalSummary, GoldenResult, MetricResult } from "@/types";
@@ -116,7 +116,7 @@ function GoldenRow({ golden, index }: { golden: GoldenResult; index: number }) {
 }
 
 export default function EvalPanel() {
-  const { generation, evaluation, embedding, envGenerationApiKey, envEvalApiKey, envEmbedApiKey } = useConfigStore();
+  const { generation, evaluation, embedding, envGenerationApiKey, envEvalApiKey, envEmbedApiKey, sourcesCount } = useConfigStore();
   const effectiveGeneration = useMemo(
     () => ({ ...generation, apiKey: generation.apiKey || envGenerationApiKey }),
     [generation, envGenerationApiKey]
@@ -139,6 +139,7 @@ export default function EvalPanel() {
   const [progressCount, setProgressCount] = useState(0);
   const [genStage, setGenStage] = useState("");
   const [elapsed, setElapsed] = useState(0);
+  const [goldensExist, setGoldensExist] = useState(false);
 
   const refreshResults = useCallback(async () => {
     setLoadingResults(true);
@@ -153,6 +154,10 @@ export default function EvalPanel() {
   }, []);
 
   useEffect(() => { refreshResults(); }, [refreshResults]);
+
+  useEffect(() => {
+    fetchGoldensExist().then(setGoldensExist);
+  }, []);
 
   useEffect(() => {
     if (!message) return;
@@ -210,6 +215,7 @@ export default function EvalPanel() {
       if (result.value) {
         setMessage(`Generated ${result.value.count} goldens. You can now run evals.`);
         setMessageType("info");
+        setGoldensExist(true);
       }
     } catch (e: any) {
       setMessage(e.message || "Golden generation failed");
@@ -231,14 +237,19 @@ export default function EvalPanel() {
     <div className="space-y-6">
       {/* Step I: Ingest (text only — points to the Ingestion section above) */}
       <section>
-        <p className={labelClass}>
-          <span className="text-text">I.</span> Add/Ingest Documents
+        <p className={labelClass + " flex items-center gap-2"}>
+          <span className="inline-flex items-center gap-2">
+            {sourcesCount > 0 && <Check className="w-3.5 h-3.5 text-success" />}
+            <span className="text-text">I.</span>
+          </span>
+          Add/Ingest Documents
         </p>
       </section>
 
       {/* Step II: Generate Goldens */}
       <section className="space-y-3">
         <div className="flex items-center gap-3">
+          {goldensExist && <Check className="w-3.5 h-3.5 text-success flex-shrink-0" />}
           <span className="font-mono text-[11px] uppercase tracking-widest text-text">II.</span>
           <button
             onClick={handleGenerate}
@@ -268,6 +279,7 @@ export default function EvalPanel() {
       {/* Step III: Run Evals */}
       <section className="space-y-3">
         <div className="flex items-center gap-3">
+          {summary && <Check className="w-3.5 h-3.5 text-success flex-shrink-0" />}
           <span className="font-mono text-[11px] uppercase tracking-widest text-text">III.</span>
           <button onClick={handleRun} disabled={running || generating} className={btnPrimary}>
             {running ? (

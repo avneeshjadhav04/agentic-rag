@@ -15,7 +15,7 @@ const btnOutline =
   "flex items-center justify-center gap-2 w-full px-4 py-2 rounded-none border border-line text-muted font-mono text-[11px] uppercase tracking-widest hover:border-accent hover:text-text transition disabled:opacity-40";
 
 export default function IngestionPanel() {
-  const { embedding, envEmbedApiKey, chunkSize, chunkOverlap } = useConfigStore();
+  const { embedding, envEmbedApiKey, chunkSize, chunkOverlap, setSourcesCount } = useConfigStore();
   const effectiveEmbedding = useMemo(
     () => ({ ...embedding, apiKey: embedding.apiKey || envEmbedApiKey }),
     [embedding, envEmbedApiKey]
@@ -39,12 +39,14 @@ export default function IngestionPanel() {
     try {
       const s = await listSources(effectiveEmbedding);
       setSources(s);
+      setSourcesCount(s.length);
     } catch {
       setSources([]);
+      setSourcesCount(0);
     } finally {
       setLoadingSources(false);
     }
-  }, [effectiveEmbedding]);
+  }, [effectiveEmbedding, setSourcesCount]);
 
   useEffect(() => { refreshSources(); }, [refreshSources]);
 

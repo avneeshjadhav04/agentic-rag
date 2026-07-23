@@ -157,6 +157,11 @@ def load_golden_dataset() -> List[dict]:
     return data
 
 
+def goldens_exist() -> bool:
+    """True if golden_dataset.json exists on disk (goldens have been generated)."""
+    return GOLDEN_DATASET_PATH.exists()
+
+
 def _metric_to_dict(metric) -> dict:
     return {
         "name": metric.__class__.__name__,
