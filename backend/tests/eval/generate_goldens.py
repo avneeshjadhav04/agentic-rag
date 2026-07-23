@@ -14,33 +14,28 @@ Q&A generation is decoupled from the generation model being evaluated).
 Curate the output before committing — these goldens are the ground truth for all
 RAG metrics in test_rag_e2e.py and test_rag_components.py.
 """
-import asyncio
 import sys
 
 from app.eval.runner import embedding_config, evaluation_config, generate_goldens_streaming
 
 
-async def main():
+def main():
     emb_cfg = embedding_config()
     eval_cfg = evaluation_config()
 
-    final = None
-    async for event in generate_goldens_streaming(emb_cfg, eval_cfg):
-        etype = event.get("type")
-        if etype == "progress":
-            stage = event.get("data", {}).get("stage", "")
-            message = event.get("data", {}).get("message", "")
-            print(f"[{stage}] {message}")
-        elif etype == "done":
-            final = event.get("data")
-        elif etype == "error":
-            print(event.get("message", "Unknown error"))
-            sys.exit(1)
+    def progress_callback(result: dict) -> None:
+        stage = result.get("stage", "")
+        message = result.get("message", "")
+        print(f"[{stage}] {message}")
 
-    if final:
-        print(f"Wrote {final['count']} goldens to {final['path']}")
+    try:
+        result = generate_goldens_streaming(emb_cfg, eval_cfg, progress_callback=progress_callback)
+        print(f"Wrote {result['count']} goldens to {result['path']}")
         print("Review and curate before committing.")
+    except ValueError as e:
+        print(str(e))
+        sys.exit(1)
 
 
 if __name__ == "__main__":
-    asyncio.run(main())
+    main()
