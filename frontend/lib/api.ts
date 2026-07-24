@@ -1,4 +1,4 @@
-import { ProviderField, SourceInfo, EvalSummary, GoldenGenerationResult } from "@/types";
+import { ProviderField, SourceInfo, EvalSummary, GoldenGenerationResult, StoredGolden, StoredEvalRun } from "@/types";
 
 // Use a relative base path so Next.js rewrites proxy requests to the backend.
 export const API_BASE = "";
@@ -216,6 +216,28 @@ export async function fetchGoldensExist(): Promise<boolean> {
   if (!res.ok) return false;
   const data = await res.json();
   return Boolean(data.exists);
+}
+
+export async function listGoldens(): Promise<StoredGolden[]> {
+  const res = await fetch(`${API_BASE}/api/eval/goldens-list`, { cache: "no-store" });
+  if (!res.ok) return [];
+  const data = await res.json();
+  return data.goldens || [];
+}
+
+export async function listEvalRuns(): Promise<StoredEvalRun[]> {
+  const res = await fetch(`${API_BASE}/api/eval/runs-list`, { cache: "no-store" });
+  if (!res.ok) return [];
+  const data = await res.json();
+  return data.runs || [];
+}
+
+export async function fetchEvalResultByName(filename: string): Promise<EvalSummary | null> {
+  const res = await fetch(`${API_BASE}/api/eval/results/${encodeURIComponent(filename)}`, { cache: "no-store" });
+  if (!res.ok) return null;
+  const data = await res.json();
+  if (data.error) return null;
+  return data as EvalSummary;
 }
 
 export async function* streamEvalRun(

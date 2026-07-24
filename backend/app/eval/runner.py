@@ -162,6 +162,66 @@ def goldens_exist() -> bool:
     return GOLDEN_DATASET_PATH.exists()
 
 
+def list_goldens() -> List[dict]:
+    """Return [{index, input, expected_output}] for each golden on disk, or [] if none."""
+    if not GOLDEN_DATASET_PATH.exists():
+        return []
+    with open(GOLDEN_DATASET_PATH, "r", encoding="utf-8") as f:
+        data = json.load(f)
+    return [
+        {"index": i, "input": g.get("input", ""), "expected_output": g.get("expected_output", "")}
+        for i, g in enumerate(data)
+    ]
+
+
+def list_eval_runs() -> List[dict]:
+    """List all eval/test_run JSONs (newest first) with lightweight metadata."""
+    results_dir = _resolve_results_dir()
+    if not results_dir.exists():
+        return []
+    out = []
+    for p in _result_files(results_dir):
+        ts = _TS_RE.search(p.stem)
+        label = (
+            datetime.strptime(ts.group(1), "%Y%m%dT%H%M%SZ").strftime("%Y-%m-%d %H:%M UTC")
+            if ts else p.stem
+        )
+        total = passed = None
+        try:
+            with open(p, "r", encoding="utf-8") as f:
+                d = json.load(f)
+            if "testCases" in d:
+                total = len(d.get("testCases", []))
+                passed = int(d.get("testPassed", 0)) or sum(
+                    1 for tc in d.get("testCases", []) if tc.get("success")
+                )
+            else:
+                total = d.get("total")
+                passed = d.get("passed")
+        except (json.JSONDecodeError, OSError):
+            pass
+        out.append({"filename": p.name, "label": label, "total": total, "passed": passed})
+    return out
+
+
+def load_result_by_name(filename: str) -> Optional[dict]:
+    """Load a single eval result file by filename, normalized to the SSE summary shape.
+
+    Returns None if the file does not exist or the filename is unsafe (must end
+    in .json and be a bare name, no path traversal).
+    """
+    if not filename.endswith(".json") or "/" in filename or "\\" in filename:
+        return None
+    p = _resolve_results_dir() / filename
+    if not p.exists():
+        return None
+    with open(p, "r", encoding="utf-8") as f:
+        data = json.load(f)
+    if isinstance(data, dict) and "testCases" in data:
+        return _normalize_test_run(data)
+    return data
+
+
 def _metric_to_dict(metric) -> dict:
     return {
         "name": metric.__class__.__name__,

@@ -1,10 +1,10 @@
 "use client";
 
 import { useConfigStore } from "@/store/configStore";
-import { fetchEvalResults, fetchGoldensExist, streamEvalRun, streamGenerateGoldens } from "@/lib/api";
+import { fetchEvalResults, fetchEvalResultByName, fetchGoldensExist, listEvalRuns, listGoldens, streamEvalRun, streamGenerateGoldens } from "@/lib/api";
 import { useState, useEffect, useCallback, useMemo, useRef } from "react";
 import { Loader2, RefreshCw, Play, Plus, Minus, Copy, Check, Download, Sparkles } from "lucide-react";
-import { EvalSummary, GoldenResult, MetricResult } from "@/types";
+import { EvalSummary, GoldenResult, MetricResult, StoredEvalRun, StoredGolden } from "@/types";
 
 const labelClass = "font-mono text-[10px] uppercase tracking-widest text-muted";
 const inputClass =
@@ -140,6 +140,14 @@ export default function EvalPanel() {
   const [genStage, setGenStage] = useState("");
   const [elapsed, setElapsed] = useState(0);
   const [goldensExist, setGoldensExist] = useState(false);
+  const [storedGoldens, setStoredGoldens] = useState<StoredGolden[]>([]);
+  const [storedRuns, setStoredRuns] = useState<StoredEvalRun[]>([]);
+  const [goldensExpanded, setGoldensExpanded] = useState(false);
+  const [runsExpanded, setRunsExpanded] = useState(false);
+  const [loadingStoredGoldens, setLoadingStoredGoldens] = useState(false);
+  const [loadingStoredRuns, setLoadingStoredRuns] = useState(false);
+  const [copiedGoldenIdx, setCopiedGoldenIdx] = useState<number | null>(null);
+  const [loadingRunFile, setLoadingRunFile] = useState<string | null>(null);
 
   const refreshResults = useCallback(async () => {
     setLoadingResults(true);
@@ -157,6 +165,56 @@ export default function EvalPanel() {
 
   useEffect(() => {
     fetchGoldensExist().then(setGoldensExist);
+  }, []);
+
+  const refreshStoredGoldens = useCallback(async () => {
+    setLoadingStoredGoldens(true);
+    try {
+      setStoredGoldens(await listGoldens());
+    } catch {
+      setStoredGoldens([]);
+    } finally {
+      setLoadingStoredGoldens(false);
+    }
+  }, []);
+
+  const refreshStoredRuns = useCallback(async () => {
+    setLoadingStoredRuns(true);
+    try {
+      setStoredRuns(await listEvalRuns());
+    } catch {
+      setStoredRuns([]);
+    } finally {
+      setLoadingStoredRuns(false);
+    }
+  }, []);
+
+  useEffect(() => {
+    refreshStoredGoldens();
+    refreshStoredRuns();
+  }, [refreshStoredGoldens, refreshStoredRuns]);
+
+  const loadRunFile = useCallback(async (filename: string) => {
+    setLoadingRunFile(filename);
+    try {
+      const s = await fetchEvalResultByName(filename);
+      if (s) {
+        setSummary(s);
+        setMessage(`Loaded run ${filename}.`);
+        setMessageType("info");
+      } else {
+        setMessage(`Failed to load run ${filename}.`);
+        setMessageType("error");
+      }
+    } finally {
+      setLoadingRunFile(null);
+    }
+  }, []);
+
+  const copyGolden = useCallback((g: StoredGolden) => {
+    navigator.clipboard.writeText(JSON.stringify(g, null, 2));
+    setCopiedGoldenIdx(g.index);
+    setTimeout(() => setCopiedGoldenIdx(null), 2000);
   }, []);
 
   useEffect(() => {
@@ -196,11 +254,10 @@ export default function EvalPanel() {
       setMessage(e.message || "Eval run failed");
       setMessageType("error");
     } finally {
-      // If the SSE done event didn't deliver a summary (proxy buffering or a
-      // dropped final event), fall back to reading the fresh on-disk results.
       if (!gotSummary) {
         await refreshResults();
       }
+      refreshStoredRuns();
       setRunning(false);
     }
   };
@@ -223,6 +280,7 @@ export default function EvalPanel() {
         setMessage(`Generated ${result.value.count} goldens. You can now run evals.`);
         setMessageType("info");
         setGoldensExist(true);
+        refreshStoredGoldens();
       }
     } catch (e: any) {
       setMessage(e.message || "Golden generation failed");
@@ -400,6 +458,110 @@ export default function EvalPanel() {
           Load Latest Results
         </button>
       )}
+
+      {/* Stored Goldens */}
+      <div className="border border-line bg-panel overflow-hidden">
+        <button
+          onClick={() => setGoldensExpanded(!goldensExpanded)}
+          className="flex items-center justify-between w-full px-3 py-2.5 font-mono text-[11px] uppercase tracking-widest text-muted hover:text-text transition"
+        >
+          <span>
+            <span className="text-text">Stored Goldens</span>
+            <span className="ml-2">/ {storedGoldens.length}</span>
+          </span>
+          <span className="flex items-center gap-2">
+            <span
+              role="button"
+              onClick={(e) => { e.stopPropagation(); refreshStoredGoldens(); }}
+              className="p-1 hover:text-text"
+            >
+              <RefreshCw className={`w-3 h-3 ${loadingStoredGoldens ? "animate-spin" : ""}`} />
+            </span>
+            {goldensExpanded ? <Minus className="w-3.5 h-3.5" /> : <Plus className="w-3.5 h-3.5" />}
+          </span>
+        </button>
+        {goldensExpanded && (
+          <div className="px-3 pb-3 max-h-40 overflow-y-auto space-y-1">
+            {storedGoldens.length === 0 ? (
+              <p className="font-mono text-[10px] uppercase tracking-widest text-muted">No goldens stored yet.</p>
+            ) : (
+              storedGoldens.map((g, i) => (
+                <div key={i} className="flex items-center gap-2 group">
+                  <p className="font-mono text-[11px] text-text truncate flex-1" title={g.input}>
+                    {g.input}
+                  </p>
+                  <button
+                    onClick={() => copyGolden(g)}
+                    className="text-muted hover:text-text transition flex-shrink-0"
+                    aria-label="Copy golden"
+                  >
+                    {copiedGoldenIdx === g.index ? (
+                      <Check className="w-3 h-3 text-success" />
+                    ) : (
+                      <Copy className="w-3 h-3" />
+                    )}
+                  </button>
+                </div>
+              ))
+            )}
+          </div>
+        )}
+      </div>
+
+      {/* Stored Evals */}
+      <div className="border border-line bg-panel overflow-hidden">
+        <button
+          onClick={() => setRunsExpanded(!runsExpanded)}
+          className="flex items-center justify-between w-full px-3 py-2.5 font-mono text-[11px] uppercase tracking-widest text-muted hover:text-text transition"
+        >
+          <span>
+            <span className="text-text">Stored Evals</span>
+            <span className="ml-2">/ {storedRuns.length}</span>
+          </span>
+          <span className="flex items-center gap-2">
+            <span
+              role="button"
+              onClick={(e) => { e.stopPropagation(); refreshStoredRuns(); }}
+              className="p-1 hover:text-text"
+            >
+              <RefreshCw className={`w-3 h-3 ${loadingStoredRuns ? "animate-spin" : ""}`} />
+            </span>
+            {runsExpanded ? <Minus className="w-3.5 h-3.5" /> : <Plus className="w-3.5 h-3.5" />}
+          </span>
+        </button>
+        {runsExpanded && (
+          <div className="px-3 pb-3 max-h-40 overflow-y-auto space-y-1">
+            {storedRuns.length === 0 ? (
+              <p className="font-mono text-[10px] uppercase tracking-widest text-muted">No eval runs stored yet.</p>
+            ) : (
+              storedRuns.map((r, i) => (
+                <button
+                  key={i}
+                  onClick={() => loadRunFile(r.filename)}
+                  disabled={loadingRunFile !== null}
+                  className="flex items-center justify-between gap-2 w-full text-left hover:bg-line transition px-1 py-0.5 disabled:opacity-40"
+                >
+                  <span className="font-mono text-[11px] text-text truncate flex-1" title={r.filename}>
+                    {r.label}
+                  </span>
+                  <span className="flex items-center gap-2 flex-shrink-0">
+                    {r.passed !== null && r.total !== null && (
+                      <span className={`font-mono text-[10px] ${r.passed === r.total ? "text-success" : "text-muted"}`}>
+                        {r.passed}/{r.total}
+                      </span>
+                    )}
+                    {loadingRunFile === r.filename ? (
+                      <Loader2 className="w-3 h-3 animate-spin" />
+                    ) : (
+                      <span className="font-mono text-[10px] text-muted">[load]</span>
+                    )}
+                  </span>
+                </button>
+              ))
+            )}
+          </div>
+        )}
+      </div>
 
       {/* Status message */}
       {message && (

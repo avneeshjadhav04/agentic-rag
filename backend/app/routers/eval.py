@@ -13,7 +13,15 @@ from typing import AsyncGenerator, Callable
 from fastapi import APIRouter, Form
 from fastapi.responses import StreamingResponse
 
-from app.eval.runner import generate_goldens_streaming, goldens_exist, load_latest_results, run_evals_streaming
+from app.eval.runner import (
+    generate_goldens_streaming,
+    goldens_exist,
+    list_eval_runs,
+    list_goldens,
+    load_latest_results,
+    load_result_by_name,
+    run_evals_streaming,
+)
 
 router = APIRouter(prefix="/api/eval", tags=["eval"])
 
@@ -145,3 +153,24 @@ async def eval_results():
 async def eval_goldens_exists():
     """Whether golden_dataset.json exists on disk (goldens have been generated)."""
     return {"exists": goldens_exist()}
+
+
+@router.get("/goldens-list")
+async def eval_goldens_list():
+    """List all goldens on disk with their input + expected_output for UI preview."""
+    return {"goldens": list_goldens()}
+
+
+@router.get("/runs-list")
+async def eval_runs_list():
+    """List all eval result files on disk (newest first) with lightweight metadata."""
+    return {"runs": list_eval_runs()}
+
+
+@router.get("/results/{filename}")
+async def eval_result_by_name(filename: str):
+    """Load a single eval result file by filename, normalized to the summary shape."""
+    data = load_result_by_name(filename)
+    if data is None:
+        return {"error": f"No result file named '{filename}'."}
+    return data

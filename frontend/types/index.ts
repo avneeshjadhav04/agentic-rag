@@ -77,3 +77,16 @@ export interface GoldenGenerationResult {
   count: number;
   path: string;
 }
+
+export interface StoredGolden {
+  index: number;
+  input: string;
+  expected_output: string;
+}
+
+export interface StoredEvalRun {
+  filename: string;
+  label: string;
+  total: number | null;
+  passed: number | null;
+}
