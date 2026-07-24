@@ -1,4 +1,4 @@
-import { ProviderField, SourceInfo, EvalSummary, GoldenGenerationResult, StoredGolden, StoredEvalRun } from "@/types";
+import { ProviderField, SourceInfo, EvalSummary, GoldenGenerationResult, StoredEvalRun, GoldensListResponse } from "@/types";
 
 // Use a relative base path so Next.js rewrites proxy requests to the backend.
 export const API_BASE = "";
@@ -218,11 +218,11 @@ export async function fetchGoldensExist(): Promise<boolean> {
   return Boolean(data.exists);
 }
 
-export async function listGoldens(): Promise<StoredGolden[]> {
+export async function listGoldens(): Promise<GoldensListResponse> {
   const res = await fetch(`${API_BASE}/api/eval/goldens-list`, { cache: "no-store" });
-  if (!res.ok) return [];
+  if (!res.ok) return { goldens: [], providers: {} };
   const data = await res.json();
-  return data.goldens || [];
+  return { goldens: data.goldens || [], providers: data.providers || {} };
 }
 
 export async function listEvalRuns(): Promise<StoredEvalRun[]> {
@@ -278,12 +278,15 @@ export async function* streamEvalRun(
   unknown
 > {
   const form = new FormData();
+  form.append("generation_provider", generation.provider);
   form.append("generation_base_url", generation.baseUrl);
   form.append("generation_model", generation.model);
   form.append("generation_api_key", generation.apiKey);
+  form.append("evaluation_provider", evaluation.provider);
   form.append("evaluation_base_url", evaluation.baseUrl);
   form.append("evaluation_model", evaluation.model);
   form.append("evaluation_api_key", evaluation.apiKey);
+  form.append("embed_provider", embedding.provider);
   form.append("embed_base_url", embedding.baseUrl);
   form.append("embed_model", embedding.model);
   form.append("embed_api_key", embedding.apiKey);
@@ -358,9 +361,11 @@ export async function* streamGenerateGoldens(
   unknown
 > {
   const form = new FormData();
+  form.append("evaluation_provider", evaluation.provider);
   form.append("evaluation_base_url", evaluation.baseUrl);
   form.append("evaluation_model", evaluation.model);
   form.append("evaluation_api_key", evaluation.apiKey);
+  form.append("embed_provider", embedding.provider);
   form.append("embed_base_url", embedding.baseUrl);
   form.append("embed_model", embedding.model);
   form.append("embed_api_key", embedding.apiKey);

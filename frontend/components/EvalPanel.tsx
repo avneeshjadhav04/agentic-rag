@@ -4,7 +4,7 @@ import { useConfigStore } from "@/store/configStore";
 import { fetchEvalResults, fetchEvalResultByName, fetchGoldensExist, listEvalRuns, listGoldens, streamEvalRun, streamGenerateGoldens, clearGoldens, deleteGolden, clearEvalRuns, deleteEvalRun } from "@/lib/api";
 import { useState, useEffect, useCallback, useMemo, useRef } from "react";
 import { Loader2, RefreshCw, Play, Plus, Minus, Copy, Check, Download, Sparkles, X } from "lucide-react";
-import { EvalSummary, GoldenResult, MetricResult, StoredEvalRun, StoredGolden } from "@/types";
+import { EvalSummary, GoldenResult, MetricResult, StoredEvalRun, StoredGolden, EvalProviders } from "@/types";
 
 const labelClass = "font-mono text-[10px] uppercase tracking-widest text-muted";
 const inputClass =
@@ -153,6 +153,7 @@ export default function EvalPanel() {
   const [deletingGolden, setDeletingGolden] = useState<number | null>(null);
   const [clearingRuns, setClearingRuns] = useState(false);
   const [deletingRun, setDeletingRun] = useState<string | null>(null);
+  const [goldenProviders, setGoldenProviders] = useState<EvalProviders>({});
 
   const refreshResults = useCallback(async () => {
     setLoadingResults(true);
@@ -175,9 +176,12 @@ export default function EvalPanel() {
   const refreshStoredGoldens = useCallback(async () => {
     setLoadingStoredGoldens(true);
     try {
-      setStoredGoldens(await listGoldens());
+      const res = await listGoldens();
+      setStoredGoldens(res.goldens);
+      setGoldenProviders(res.providers);
     } catch {
       setStoredGoldens([]);
+      setGoldenProviders({});
     } finally {
       setLoadingStoredGoldens(false);
     }
@@ -324,6 +328,32 @@ export default function EvalPanel() {
       ? new Date(summary.run_at).toISOString().replace(/[:.]/g, "-")
       : Date.now();
     a.download = `eval-results-${ts}.json`;
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+    URL.revokeObjectURL(url);
+  };
+
+  const downloadGolden = (g: StoredGolden) => {
+    const payload = { providers: goldenProviders, golden: { index: g.index, input: g.input, expected_output: g.expected_output } };
+    const blob = new Blob([JSON.stringify(payload, null, 2)], { type: "application/json" });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = `golden-${g.index}.json`;
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+    URL.revokeObjectURL(url);
+  };
+
+  const downloadAllGoldens = () => {
+    const payload = { providers: goldenProviders, goldens: storedGoldens };
+    const blob = new Blob([JSON.stringify(payload, null, 2)], { type: "application/json" });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = `goldens.json`;
     document.body.appendChild(a);
     a.click();
     document.body.removeChild(a);
@@ -605,6 +635,13 @@ export default function EvalPanel() {
                     )}
                   </button>
                   <button
+                    onClick={() => downloadGolden(g)}
+                    className="text-muted hover:text-text transition flex-shrink-0"
+                    aria-label="Download golden"
+                  >
+                    <Download className="w-3 h-3" />
+                  </button>
+                  <button
                     onClick={() => handleDeleteGolden(g.index)}
                     disabled={deletingGolden !== null || clearingGoldens}
                     className="text-muted hover:text-text transition flex-shrink-0 disabled:opacity-40"
@@ -620,13 +657,19 @@ export default function EvalPanel() {
               ))
             )}
             {storedGoldens.length > 0 && (
-              <div className="pt-1">
+              <div className="pt-1 flex items-center gap-4">
                 <button
                   onClick={handleClearGoldens}
                   disabled={clearingGoldens || deletingGolden !== null}
                   className="font-mono text-[10px] uppercase tracking-widest text-muted hover:text-text transition disabled:opacity-40"
                 >
                   {clearingGoldens ? <Loader2 className="w-3 h-3 animate-spin" /> : "Clear All"}
+                </button>
+                <button
+                  onClick={downloadAllGoldens}
+                  className="font-mono text-[10px] uppercase tracking-widest text-muted hover:text-text transition"
+                >
+                  Download All
                 </button>
               </div>
             )}

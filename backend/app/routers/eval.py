@@ -19,6 +19,7 @@ from app.eval.runner import (
     delete_eval_run,
     delete_golden,
     generate_goldens_streaming,
+    get_golden_providers,
     goldens_exist,
     list_eval_runs,
     list_goldens,
@@ -117,19 +118,22 @@ async def _stream_threaded(
 
 @router.post("/run")
 async def eval_run(
+    generation_provider: str = Form(default=""),
     generation_base_url: str = Form(...),
     generation_model: str = Form(...),
     generation_api_key: str = Form(default=""),
+    evaluation_provider: str = Form(default=""),
     evaluation_base_url: str = Form(...),
     evaluation_model: str = Form(...),
     evaluation_api_key: str = Form(default=""),
+    embed_provider: str = Form(default=""),
     embed_base_url: str = Form(...),
     embed_model: str = Form(...),
     embed_api_key: str = Form(default=""),
 ):
-    gen_cfg = {"base_url": generation_base_url, "model": generation_model, "api_key": generation_api_key}
-    eval_cfg = {"base_url": evaluation_base_url, "model": evaluation_model, "api_key": evaluation_api_key}
-    emb_cfg = {"base_url": embed_base_url, "model": embed_model, "api_key": embed_api_key}
+    gen_cfg = {"provider": generation_provider, "base_url": generation_base_url, "model": generation_model, "api_key": generation_api_key}
+    eval_cfg = {"provider": evaluation_provider, "base_url": evaluation_base_url, "model": evaluation_model, "api_key": evaluation_api_key}
+    emb_cfg = {"provider": embed_provider, "base_url": embed_base_url, "model": embed_model, "api_key": embed_api_key}
 
     def target(progress_callback: Callable[[dict], None]) -> dict:
         return run_evals_streaming(gen_cfg, eval_cfg, emb_cfg, progress_callback=progress_callback)
@@ -139,15 +143,17 @@ async def eval_run(
 
 @router.post("/generate-goldens")
 async def eval_generate_goldens(
+    evaluation_provider: str = Form(default=""),
     evaluation_base_url: str = Form(...),
     evaluation_model: str = Form(...),
     evaluation_api_key: str = Form(default=""),
+    embed_provider: str = Form(default=""),
     embed_base_url: str = Form(...),
     embed_model: str = Form(...),
     embed_api_key: str = Form(default=""),
 ):
-    eval_cfg = {"base_url": evaluation_base_url, "model": evaluation_model, "api_key": evaluation_api_key}
-    emb_cfg = {"base_url": embed_base_url, "model": embed_model, "api_key": embed_api_key}
+    eval_cfg = {"provider": evaluation_provider, "base_url": evaluation_base_url, "model": evaluation_model, "api_key": evaluation_api_key}
+    emb_cfg = {"provider": embed_provider, "base_url": embed_base_url, "model": embed_model, "api_key": embed_api_key}
 
     def target(progress_callback: Callable[[dict], None]) -> dict:
         return generate_goldens_streaming(emb_cfg, eval_cfg, progress_callback=progress_callback)
@@ -171,8 +177,9 @@ async def eval_goldens_exists():
 
 @router.get("/goldens-list")
 async def eval_goldens_list():
-    """List all goldens on disk with their input + expected_output for UI preview."""
-    return {"goldens": list_goldens()}
+    """List all goldens on disk with their input + expected_output for UI preview,
+    along with the provider metadata captured at generation time."""
+    return {"goldens": list_goldens(), "providers": get_golden_providers()}
 
 
 @router.get("/runs-list")

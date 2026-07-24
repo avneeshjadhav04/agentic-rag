@@ -66,6 +66,7 @@ export interface EvalSummary {
   metric_averages: MetricAverage[];
   goldens: GoldenResult[];
   run_at: string;
+  providers?: EvalProviders | null;
 }
 
 export interface GoldenGenerationStage {
@@ -89,4 +90,21 @@ export interface StoredEvalRun {
   label: string;
   total: number | null;
   passed: number | null;
+}
+
+export interface ProviderMeta {
+  provider: string;
+  base_url: string;
+  model: string;
+}
+
+export interface EvalProviders {
+  generation?: ProviderMeta;
+  evaluation?: ProviderMeta;
+  embedding?: ProviderMeta;
+}
+
+export interface GoldensListResponse {
+  goldens: StoredGolden[];
+  providers: EvalProviders;
 }

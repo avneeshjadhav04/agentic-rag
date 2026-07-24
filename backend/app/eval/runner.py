@@ -143,18 +143,43 @@ def run_graph_for_question(graph, question: str) -> dict:
     return graph.invoke(state)
 
 
-def load_golden_dataset() -> List[dict]:
-    """Load golden_dataset.json. Raises FileNotFoundError if missing."""
+def _read_golden_file() -> Optional[dict]:
+    """Read golden_dataset.json. Returns the raw parsed content (dict or list)
+    or None if the file does not exist."""
     if not GOLDEN_DATASET_PATH.exists():
+        return None
+    with open(GOLDEN_DATASET_PATH, "r", encoding="utf-8") as f:
+        return json.load(f)
+
+
+def _extract_goldens(data) -> list:
+    """Extract the goldens list from either format:
+    - New: {providers: {...}, goldens: [...]}
+    - Old: [...] (bare list)
+    """
+    if isinstance(data, dict) and "goldens" in data:
+        return data["goldens"]
+    if isinstance(data, list):
+        return data
+    return []
+
+
+def load_golden_dataset() -> List[dict]:
+    """Load golden_dataset.json. Raises FileNotFoundError if missing.
+
+    Supports both the new format ({providers, goldens}) and the legacy
+    bare-list format. Returns only the goldens list.
+    """
+    data = _read_golden_file()
+    if data is None:
         raise FileNotFoundError(
             f"Golden dataset not found at {GOLDEN_DATASET_PATH}. "
             "Run `python -m tests.eval.generate_goldens` first."
         )
-    with open(GOLDEN_DATASET_PATH, "r", encoding="utf-8") as f:
-        data = json.load(f)
-    if not data:
+    goldens = _extract_goldens(data)
+    if not goldens:
         raise ValueError("Golden dataset is empty.")
-    return data
+    return goldens
 
 
 def goldens_exist() -> bool:
@@ -162,15 +187,26 @@ def goldens_exist() -> bool:
     return GOLDEN_DATASET_PATH.exists()
 
 
+def get_golden_providers() -> dict:
+    """Return the providers metadata stored in golden_dataset.json, or {} if
+    the file uses the legacy bare-list format or is missing."""
+    data = _read_golden_file()
+    if data is None:
+        return {}
+    if isinstance(data, dict) and "providers" in data:
+        return data["providers"]
+    return {}
+
+
 def list_goldens() -> List[dict]:
     """Return [{index, input, expected_output}] for each golden on disk, or [] if none."""
-    if not GOLDEN_DATASET_PATH.exists():
+    data = _read_golden_file()
+    if data is None:
         return []
-    with open(GOLDEN_DATASET_PATH, "r", encoding="utf-8") as f:
-        data = json.load(f)
+    goldens = _extract_goldens(data)
     return [
         {"index": i, "input": g.get("input", ""), "expected_output": g.get("expected_output", "")}
-        for i, g in enumerate(data)
+        for i, g in enumerate(goldens)
     ]
 
 
@@ -237,14 +273,21 @@ def delete_golden(index: int) -> bool:
     Returns True on success, False if the file is missing or the index is
     out of range. Remaining goldens are reindexed implicitly (list_goldens
     assigns index via enumerate), so callers must refresh after delete.
+
+    Preserves the file format (dict with providers stays dict, bare list
+    stays list) so provider metadata is not lost on delete.
     """
-    if not GOLDEN_DATASET_PATH.exists():
+    data = _read_golden_file()
+    if data is None:
         return False
-    with open(GOLDEN_DATASET_PATH, "r", encoding="utf-8") as f:
-        data = json.load(f)
-    if not isinstance(data, list) or index < 0 or index >= len(data):
+    goldens = _extract_goldens(data)
+    if index < 0 or index >= len(goldens):
         return False
-    data.pop(index)
+    goldens.pop(index)
+    if isinstance(data, dict) and "goldens" in data:
+        data["goldens"] = goldens
+    else:
+        data = goldens
     with open(GOLDEN_DATASET_PATH, "w", encoding="utf-8") as f:
         json.dump(data, f, indent=2, ensure_ascii=False)
     return True
@@ -286,6 +329,15 @@ def _metric_to_dict(metric) -> dict:
         "threshold": float(metric.threshold),
         "passed": bool(metric.is_successful()),
         "reason": metric.reason or "",
+    }
+
+
+def _provider_meta(cfg: dict) -> dict:
+    """Extract provider metadata from a config dict, excluding api_key."""
+    return {
+        "provider": cfg.get("provider", ""),
+        "base_url": cfg.get("base_url", ""),
+        "model": cfg.get("model", ""),
     }
 
 
@@ -383,6 +435,11 @@ def run_evals_streaming(
         "metric_averages": metric_averages,
         "goldens": golden_results,
         "run_at": datetime.now(timezone.utc).isoformat(),
+        "providers": {
+            "generation": _provider_meta(gen_cfg),
+            "evaluation": _provider_meta(eval_cfg),
+            "embedding": _provider_meta(emb_cfg),
+        },
     }
 
     _persist_summary(summary)
@@ -573,9 +630,17 @@ def generate_goldens_streaming(
             "expected_output": golden.expected_output,
         })
 
+    output = {
+        "providers": {
+            "evaluation": _provider_meta(eval_cfg),
+            "embedding": _provider_meta(emb_cfg),
+        },
+        "goldens": goldens,
+    }
+
     GOLDEN_DATASET_PATH.parent.mkdir(parents=True, exist_ok=True)
     with open(GOLDEN_DATASET_PATH, "w", encoding="utf-8") as f:
-        json.dump(goldens, f, indent=2, ensure_ascii=False)
+        json.dump(output, f, indent=2, ensure_ascii=False)
 
     if progress_callback:
         progress_callback({"stage": "done", "message": f"Wrote {len(goldens)} goldens."})
