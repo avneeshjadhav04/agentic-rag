@@ -176,6 +176,7 @@ export default function EvalPanel() {
     setMessage("");
     setSummary(null);
     setProgressCount(0);
+    let gotSummary = false;
     try {
       const generator = streamEvalRun(effectiveGeneration, effectiveEvaluation, effectiveEmbedding);
       let result = await generator.next();
@@ -189,11 +190,17 @@ export default function EvalPanel() {
         setSummary(result.value);
         setMessage(`Eval complete: ${result.value.passed}/${result.value.total} goldens passed.`);
         setMessageType("info");
+        gotSummary = true;
       }
     } catch (e: any) {
       setMessage(e.message || "Eval run failed");
       setMessageType("error");
     } finally {
+      // If the SSE done event didn't deliver a summary (proxy buffering or a
+      // dropped final event), fall back to reading the fresh on-disk results.
+      if (!gotSummary) {
+        await refreshResults();
+      }
       setRunning(false);
     }
   };

@@ -204,7 +204,7 @@ export async function* streamChat(
 }
 
 export async function fetchEvalResults(): Promise<EvalSummary | null> {
-  const res = await fetch(`${API_BASE}/api/eval/results`);
+  const res = await fetch(`${API_BASE}/api/eval/results`, { cache: "no-store" });
   if (!res.ok) return null;
   const data = await res.json();
   if (data.error) return null;
@@ -212,7 +212,7 @@ export async function fetchEvalResults(): Promise<EvalSummary | null> {
 }
 
 export async function fetchGoldensExist(): Promise<boolean> {
-  const res = await fetch(`${API_BASE}/api/eval/goldens-exists`);
+  const res = await fetch(`${API_BASE}/api/eval/goldens-exists`, { cache: "no-store" });
   if (!res.ok) return false;
   const data = await res.json();
   return Boolean(data.exists);

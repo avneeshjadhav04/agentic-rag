@@ -1,12 +1,26 @@
 """FastAPI entry point for the Agentic RAG backend."""
 import os
 
-from fastapi import FastAPI
+from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
 
 from app.routers import chat, config, eval, ingestion
 
 app = FastAPI(title="Agentic RAG Backend", version="0.1.0")
+
+
+# All GET endpoints return dynamic, frequently-changing data (eval results,
+# source lists, provider configs). Prevent the browser, the Next.js rewrite
+# proxy, and the PaaS edge proxy from serving stale cached responses — the
+# canonical example is /api/eval/results being served from cache right after
+# a run finishes, hiding the fresh on-disk file until the cache expires.
+@app.middleware("http")
+async def disable_get_cache(request: Request, call_next):
+    response = await call_next(request)
+    if request.method == "GET":
+        response.headers["Cache-Control"] = "no-store"
+    return response
+
 
 # Allow all origins for local dev / single-container deploy.
 app.add_middleware(
