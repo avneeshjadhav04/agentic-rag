@@ -55,6 +55,12 @@ async def _stream_threaded(
     loop = asyncio.get_running_loop()
     client_gone = False
 
+    # Seconds between keepalive comments. Well under Railway's ~30s idle
+    # timeout — SSE comments (lines starting with ":") are ignored by the
+    # browser and our parser, but keep bytes flowing so the proxy doesn't
+    # kill the idle connection during long gaps between progress events.
+    HEARTBEAT_INTERVAL = 15
+
     def progress_callback(result: dict) -> None:
         if client_gone:
             return
@@ -75,7 +81,11 @@ async def _stream_threaded(
 
     try:
         while True:
-            item = await progress_queue.get()
+            try:
+                item = await asyncio.wait_for(progress_queue.get(), timeout=HEARTBEAT_INTERVAL)
+            except asyncio.TimeoutError:
+                yield ": keepalive\n\n"
+                continue
             if isinstance(item, tuple) and len(item) == 2:
                 tag, payload = item
                 if tag == "__done__":

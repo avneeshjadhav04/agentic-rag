@@ -255,7 +255,21 @@ export default function EvalPanel() {
       setMessageType("error");
     } finally {
       if (!gotSummary) {
-        await refreshResults();
+        // The SSE connection may have died before the backend finished.
+        // Poll for the results — the backend thread is still running and
+        // will write the file when it completes. Try every 5s for up to 30 min.
+        setMessage("Connection lost — waiting for backend to finish…");
+        setMessageType("warn");
+        for (let attempt = 0; attempt < 360; attempt++) {
+          await new Promise((r) => setTimeout(r, 5000));
+          const s = await fetchEvalResults();
+          if (s) {
+            setSummary(s);
+            setMessage(`Eval complete: ${s.passed}/${s.total} goldens passed.`);
+            setMessageType("info");
+            break;
+          }
+        }
       }
       refreshStoredRuns();
       setRunning(false);
