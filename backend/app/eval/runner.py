@@ -252,38 +252,50 @@ def run_evals_streaming(
     for golden in goldens:
         question = golden["input"]
         expected = golden.get("expected_output", "")
-        final_state = run_graph_for_question(graph, question)
-        actual_output = final_state.get("generation", "")
-        docs = final_state.get("documents", [])
-        retrieval_context = [d["content"] for d in docs] if docs else []
+        try:
+            final_state = run_graph_for_question(graph, question)
+            actual_output = final_state.get("generation", "")
+            docs = final_state.get("documents", [])
+            retrieval_context = [d["content"] for d in docs] if docs else [""]
 
-        metrics = [
-            AnswerRelevancyMetric(threshold=0.5, model=judge, async_mode=False),
-            FaithfulnessMetric(threshold=0.5, model=judge, async_mode=False),
-        ]
-        if expected:
-            metrics.append(ContextualPrecisionMetric(threshold=0.5, model=judge, async_mode=False))
-            metrics.append(ContextualRecallMetric(threshold=0.5, model=judge, async_mode=False))
+            metrics = [
+                AnswerRelevancyMetric(threshold=0.5, model=judge, async_mode=False),
+                FaithfulnessMetric(threshold=0.5, model=judge, async_mode=False),
+            ]
+            if expected:
+                metrics.append(ContextualPrecisionMetric(threshold=0.5, model=judge, async_mode=False))
+                metrics.append(ContextualRecallMetric(threshold=0.5, model=judge, async_mode=False))
 
-        test_case = LLMTestCase(
-            input=question,
-            expected_output=expected,
-            actual_output=actual_output,
-            retrieval_context=retrieval_context,
-        )
+            test_case = LLMTestCase(
+                input=question,
+                expected_output=expected,
+                actual_output=actual_output,
+                retrieval_context=retrieval_context,
+            )
 
-        for m in metrics:
-            m.measure(test_case)
+            for m in metrics:
+                m.measure(test_case)
 
-        metric_dicts = [_metric_to_dict(m) for m in metrics]
-        golden_passed = all(md["passed"] for md in metric_dicts)
-        result = {
-            "input": question,
-            "expected_output": expected,
-            "actual_output": actual_output,
-            "metrics": metric_dicts,
-            "passed": golden_passed,
-        }
+            metric_dicts = [_metric_to_dict(m) for m in metrics]
+            golden_passed = all(md["passed"] for md in metric_dicts)
+            result = {
+                "input": question,
+                "expected_output": expected,
+                "actual_output": actual_output,
+                "metrics": metric_dicts,
+                "passed": golden_passed,
+            }
+        except Exception as e:
+            result = {
+                "input": question,
+                "expected_output": expected,
+                "actual_output": "",
+                "metrics": [],
+                "passed": False,
+                "error": str(e),
+            }
+            metric_dicts = []
+
         golden_results.append(result)
 
         for md in metric_dicts:

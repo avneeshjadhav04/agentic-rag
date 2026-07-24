@@ -30,7 +30,7 @@ def test_rag_component_level(golden_dataset, rag_graph, judge_llm):
         final_state = run_graph_for_question(rag_graph, question)
         actual_output = final_state.get("generation", "")
         docs = final_state.get("documents", [])
-        retrieval_context = [d["content"] for d in docs] if docs else []
+        retrieval_context = [d["content"] for d in docs] if docs else [""]
 
         test_case = LLMTestCase(
             input=question,
