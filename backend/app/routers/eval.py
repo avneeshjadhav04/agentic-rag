@@ -14,6 +14,10 @@ from fastapi import APIRouter, Form
 from fastapi.responses import StreamingResponse
 
 from app.eval.runner import (
+    clear_eval_runs,
+    clear_goldens,
+    delete_eval_run,
+    delete_golden,
     generate_goldens_streaming,
     goldens_exist,
     list_eval_runs,
@@ -184,3 +188,31 @@ async def eval_result_by_name(filename: str):
     if data is None:
         return {"error": f"No result file named '{filename}'."}
     return data
+
+
+@router.delete("/goldens")
+async def eval_clear_goldens():
+    """Delete the entire golden_dataset.json file."""
+    ok = clear_goldens()
+    return {"ok": ok}
+
+
+@router.delete("/goldens/{index}")
+async def eval_delete_golden(index: int):
+    """Remove a single golden by array index. Remaining goldens are reindexed."""
+    ok = delete_golden(index)
+    return {"ok": ok}
+
+
+@router.delete("/runs")
+async def eval_clear_runs():
+    """Delete every eval_*.json and test_run_*.json in the results dir."""
+    ok = clear_eval_runs()
+    return {"ok": ok}
+
+
+@router.delete("/runs/{filename}")
+async def eval_delete_run(filename: str):
+    """Delete a single eval result file by filename."""
+    ok = delete_eval_run(filename)
+    return {"ok": ok}

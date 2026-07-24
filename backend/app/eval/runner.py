@@ -222,6 +222,63 @@ def load_result_by_name(filename: str) -> Optional[dict]:
     return data
 
 
+def clear_goldens() -> bool:
+    """Delete the golden_dataset.json file. No-op (returns True) if absent."""
+    try:
+        GOLDEN_DATASET_PATH.unlink(missing_ok=True)
+        return True
+    except OSError:
+        return False
+
+
+def delete_golden(index: int) -> bool:
+    """Remove the golden at *index* from golden_dataset.json and rewrite.
+
+    Returns True on success, False if the file is missing or the index is
+    out of range. Remaining goldens are reindexed implicitly (list_goldens
+    assigns index via enumerate), so callers must refresh after delete.
+    """
+    if not GOLDEN_DATASET_PATH.exists():
+        return False
+    with open(GOLDEN_DATASET_PATH, "r", encoding="utf-8") as f:
+        data = json.load(f)
+    if not isinstance(data, list) or index < 0 or index >= len(data):
+        return False
+    data.pop(index)
+    with open(GOLDEN_DATASET_PATH, "w", encoding="utf-8") as f:
+        json.dump(data, f, indent=2, ensure_ascii=False)
+    return True
+
+
+def clear_eval_runs() -> bool:
+    """Delete every eval_*.json and test_run_*.json in the results dir."""
+    results_dir = _resolve_results_dir()
+    if not results_dir.exists():
+        return True
+    ok = True
+    for p in _result_files(results_dir):
+        try:
+            p.unlink(missing_ok=True)
+        except OSError:
+            ok = False
+    return ok
+
+
+def delete_eval_run(filename: str) -> bool:
+    """Delete a single eval result file by filename. Returns False if the
+    filename is unsafe, missing, or the file does not exist."""
+    if not filename.endswith(".json") or "/" in filename or "\\" in filename:
+        return False
+    p = _resolve_results_dir() / filename
+    if not p.exists():
+        return False
+    try:
+        p.unlink()
+        return True
+    except OSError:
+        return False
+
+
 def _metric_to_dict(metric) -> dict:
     return {
         "name": metric.__class__.__name__,

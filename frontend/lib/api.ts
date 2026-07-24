@@ -240,6 +240,34 @@ export async function fetchEvalResultByName(filename: string): Promise<EvalSumma
   return data as EvalSummary;
 }
 
+export async function clearGoldens(): Promise<boolean> {
+  const res = await fetch(`${API_BASE}/api/eval/goldens`, { method: "DELETE" });
+  if (!res.ok) return false;
+  const data = await res.json();
+  return data.ok === true;
+}
+
+export async function deleteGolden(index: number): Promise<boolean> {
+  const res = await fetch(`${API_BASE}/api/eval/goldens/${index}`, { method: "DELETE" });
+  if (!res.ok) return false;
+  const data = await res.json();
+  return data.ok === true;
+}
+
+export async function clearEvalRuns(): Promise<boolean> {
+  const res = await fetch(`${API_BASE}/api/eval/runs`, { method: "DELETE" });
+  if (!res.ok) return false;
+  const data = await res.json();
+  return data.ok === true;
+}
+
+export async function deleteEvalRun(filename: string): Promise<boolean> {
+  const res = await fetch(`${API_BASE}/api/eval/runs/${encodeURIComponent(filename)}`, { method: "DELETE" });
+  if (!res.ok) return false;
+  const data = await res.json();
+  return data.ok === true;
+}
+
 export async function* streamEvalRun(
   generation: ProviderField,
   evaluation: ProviderField,

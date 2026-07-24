@@ -1,9 +1,9 @@
 "use client";
 
 import { useConfigStore } from "@/store/configStore";
-import { fetchEvalResults, fetchEvalResultByName, fetchGoldensExist, listEvalRuns, listGoldens, streamEvalRun, streamGenerateGoldens } from "@/lib/api";
+import { fetchEvalResults, fetchEvalResultByName, fetchGoldensExist, listEvalRuns, listGoldens, streamEvalRun, streamGenerateGoldens, clearGoldens, deleteGolden, clearEvalRuns, deleteEvalRun } from "@/lib/api";
 import { useState, useEffect, useCallback, useMemo, useRef } from "react";
-import { Loader2, RefreshCw, Play, Plus, Minus, Copy, Check, Download, Sparkles } from "lucide-react";
+import { Loader2, RefreshCw, Play, Plus, Minus, Copy, Check, Download, Sparkles, X } from "lucide-react";
 import { EvalSummary, GoldenResult, MetricResult, StoredEvalRun, StoredGolden } from "@/types";
 
 const labelClass = "font-mono text-[10px] uppercase tracking-widest text-muted";
@@ -148,6 +148,11 @@ export default function EvalPanel() {
   const [loadingStoredRuns, setLoadingStoredRuns] = useState(false);
   const [copiedGoldenIdx, setCopiedGoldenIdx] = useState<number | null>(null);
   const [loadingRunFile, setLoadingRunFile] = useState<string | null>(null);
+  const [loadedRunFilename, setLoadedRunFilename] = useState<string | null>(null);
+  const [clearingGoldens, setClearingGoldens] = useState(false);
+  const [deletingGolden, setDeletingGolden] = useState<number | null>(null);
+  const [clearingRuns, setClearingRuns] = useState(false);
+  const [deletingRun, setDeletingRun] = useState<string | null>(null);
 
   const refreshResults = useCallback(async () => {
     setLoadingResults(true);
@@ -200,6 +205,7 @@ export default function EvalPanel() {
       const s = await fetchEvalResultByName(filename);
       if (s) {
         setSummary(s);
+        setLoadedRunFilename(filename);
         setMessage(`Loaded run ${filename}.`);
         setMessageType("info");
       } else {
@@ -233,6 +239,7 @@ export default function EvalPanel() {
     setRunning(true);
     setMessage("");
     setSummary(null);
+    setLoadedRunFilename(null);
     setProgressCount(0);
     let gotSummary = false;
     try {
@@ -246,6 +253,7 @@ export default function EvalPanel() {
       }
       if (result.value) {
         setSummary(result.value);
+        setLoadedRunFilename(null);
         setMessage(`Eval complete: ${result.value.passed}/${result.value.total} goldens passed.`);
         setMessageType("info");
         gotSummary = true;
@@ -265,6 +273,7 @@ export default function EvalPanel() {
           const s = await fetchEvalResults();
           if (s) {
             setSummary(s);
+            setLoadedRunFilename(null);
             setMessage(`Eval complete: ${s.passed}/${s.total} goldens passed.`);
             setMessageType("info");
             break;
@@ -319,6 +328,86 @@ export default function EvalPanel() {
     a.click();
     document.body.removeChild(a);
     URL.revokeObjectURL(url);
+  };
+
+  const handleClearGoldens = async () => {
+    setClearingGoldens(true);
+    setMessage("");
+    try {
+      const ok = await clearGoldens();
+      if (ok) {
+        setMessage("Cleared all goldens.");
+        setMessageType("info");
+        setGoldensExist(false);
+        refreshStoredGoldens();
+      } else {
+        setMessage("Failed to clear goldens.");
+        setMessageType("error");
+      }
+    } finally {
+      setClearingGoldens(false);
+    }
+  };
+
+  const handleDeleteGolden = async (index: number) => {
+    setDeletingGolden(index);
+    setMessage("");
+    try {
+      const ok = await deleteGolden(index);
+      if (ok) {
+        setMessage(`Removed golden #${index}.`);
+        setMessageType("info");
+        refreshStoredGoldens();
+        fetchGoldensExist().then(setGoldensExist);
+      } else {
+        setMessage(`Failed to remove golden #${index}.`);
+        setMessageType("error");
+      }
+    } finally {
+      setDeletingGolden(null);
+    }
+  };
+
+  const handleClearRuns = async () => {
+    setClearingRuns(true);
+    setMessage("");
+    try {
+      const ok = await clearEvalRuns();
+      if (ok) {
+        setMessage("Cleared all eval runs.");
+        setMessageType("info");
+        setSummary(null);
+        setLoadedRunFilename(null);
+        refreshStoredRuns();
+      } else {
+        setMessage("Failed to clear eval runs.");
+        setMessageType("error");
+      }
+    } finally {
+      setClearingRuns(false);
+    }
+  };
+
+  const handleDeleteRun = async (filename: string) => {
+    setDeletingRun(filename);
+    setMessage("");
+    try {
+      const ok = await deleteEvalRun(filename);
+      if (ok) {
+        setMessage(`Removed ${filename}.`);
+        setMessageType("info");
+        if (loadedRunFilename === filename) {
+          setSummary(null);
+          setLoadedRunFilename(null);
+        }
+        refreshStoredRuns();
+      } else {
+        setMessage(`Failed to remove ${filename}.`);
+        setMessageType("error");
+      }
+    } finally {
+      setDeletingRun(null);
+    }
   };
 
   const statusClass =
@@ -515,8 +604,31 @@ export default function EvalPanel() {
                       <Copy className="w-3 h-3" />
                     )}
                   </button>
+                  <button
+                    onClick={() => handleDeleteGolden(g.index)}
+                    disabled={deletingGolden !== null || clearingGoldens}
+                    className="text-muted hover:text-text transition flex-shrink-0 disabled:opacity-40"
+                    aria-label="Remove golden"
+                  >
+                    {deletingGolden === g.index ? (
+                      <Loader2 className="w-3 h-3 animate-spin" />
+                    ) : (
+                      <X className="w-3 h-3" />
+                    )}
+                  </button>
                 </div>
               ))
+            )}
+            {storedGoldens.length > 0 && (
+              <div className="pt-1">
+                <button
+                  onClick={handleClearGoldens}
+                  disabled={clearingGoldens || deletingGolden !== null}
+                  className="font-mono text-[10px] uppercase tracking-widest text-muted hover:text-text transition disabled:opacity-40"
+                >
+                  {clearingGoldens ? <Loader2 className="w-3 h-3 animate-spin" /> : "Clear All"}
+                </button>
+              </div>
             )}
           </div>
         )}
@@ -549,29 +661,51 @@ export default function EvalPanel() {
               <p className="font-mono text-[10px] uppercase tracking-widest text-muted">No eval runs stored yet.</p>
             ) : (
               storedRuns.map((r, i) => (
-                <button
-                  key={i}
-                  onClick={() => loadRunFile(r.filename)}
-                  disabled={loadingRunFile !== null}
-                  className="flex items-center justify-between gap-2 w-full text-left hover:bg-line transition px-1 py-0.5 disabled:opacity-40"
-                >
-                  <span className="font-mono text-[11px] text-text truncate flex-1" title={r.filename}>
-                    {r.label}
-                  </span>
-                  <span className="flex items-center gap-2 flex-shrink-0">
+                <div key={i} className="flex items-center justify-between gap-2 px-1 py-0.5 hover:bg-line transition">
+                  <button
+                    onClick={() => loadRunFile(r.filename)}
+                    disabled={loadingRunFile !== null || deletingRun !== null || clearingRuns}
+                    className="flex items-center gap-2 flex-1 min-w-0 text-left disabled:opacity-40"
+                  >
+                    <span className="font-mono text-[11px] text-text truncate flex-1" title={r.filename}>
+                      {r.label}
+                    </span>
                     {r.passed !== null && r.total !== null && (
                       <span className={`font-mono text-[10px] ${r.passed === r.total ? "text-success" : "text-muted"}`}>
                         {r.passed}/{r.total}
                       </span>
                     )}
                     {loadingRunFile === r.filename ? (
+                      <Loader2 className="w-3 h-3 animate-spin flex-shrink-0" />
+                    ) : (
+                      <span className="font-mono text-[10px] text-muted flex-shrink-0">[load]</span>
+                    )}
+                  </button>
+                  <button
+                    onClick={() => handleDeleteRun(r.filename)}
+                    disabled={deletingRun !== null || clearingRuns || loadingRunFile !== null}
+                    className="text-muted hover:text-text transition flex-shrink-0 disabled:opacity-40"
+                    aria-label="Remove eval run"
+                  >
+                    {deletingRun === r.filename ? (
                       <Loader2 className="w-3 h-3 animate-spin" />
                     ) : (
-                      <span className="font-mono text-[10px] text-muted">[load]</span>
+                      <X className="w-3 h-3" />
                     )}
-                  </span>
-                </button>
+                  </button>
+                </div>
               ))
+            )}
+            {storedRuns.length > 0 && (
+              <div className="pt-1">
+                <button
+                  onClick={handleClearRuns}
+                  disabled={clearingRuns || deletingRun !== null}
+                  className="font-mono text-[10px] uppercase tracking-widest text-muted hover:text-text transition disabled:opacity-40"
+                >
+                  {clearingRuns ? <Loader2 className="w-3 h-3 animate-spin" /> : "Clear All"}
+                </button>
+              </div>
             )}
           </div>
         )}
