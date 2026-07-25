@@ -447,11 +447,18 @@ export default function EvalPanel() {
     try {
       const s = await fetchEvalResultByName(filename);
       if (s) {
+        let ts: string;
+        if (s.run_at) {
+          ts = new Date(s.run_at).toISOString().replace(/[:.]/g, "-");
+        } else {
+          const m = filename.match(/(\d{4})(\d{2})(\d{2})T(\d{2})(\d{2})(\d{2})Z/);
+          ts = m ? `${m[1]}-${m[2]}-${m[3]}T${m[4]}-${m[5]}-${m[6]}Z` : String(Date.now());
+        }
         const blob = new Blob([JSON.stringify(s, null, 2)], { type: "application/json" });
         const url = URL.createObjectURL(blob);
         const a = document.createElement("a");
         a.href = url;
-        a.download = filename;
+        a.download = `eval-results-${ts}.json`;
         document.body.appendChild(a);
         a.click();
         document.body.removeChild(a);
