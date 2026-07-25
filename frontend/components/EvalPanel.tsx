@@ -153,6 +153,7 @@ export default function EvalPanel() {
   const [deletingGolden, setDeletingGolden] = useState<number | null>(null);
   const [clearingRuns, setClearingRuns] = useState(false);
   const [deletingRun, setDeletingRun] = useState<string | null>(null);
+  const [downloadingRun, setDownloadingRun] = useState<string | null>(null);
   const [goldenProviders, setGoldenProviders] = useState<EvalProviders>({});
 
   const refreshResults = useCallback(async () => {
@@ -440,6 +441,30 @@ export default function EvalPanel() {
     }
   };
 
+  const handleDownloadRun = async (filename: string) => {
+    setDownloadingRun(filename);
+    setMessage("");
+    try {
+      const s = await fetchEvalResultByName(filename);
+      if (s) {
+        const blob = new Blob([JSON.stringify(s, null, 2)], { type: "application/json" });
+        const url = URL.createObjectURL(blob);
+        const a = document.createElement("a");
+        a.href = url;
+        a.download = filename;
+        document.body.appendChild(a);
+        a.click();
+        document.body.removeChild(a);
+        URL.revokeObjectURL(url);
+      } else {
+        setMessage(`Failed to download ${filename}.`);
+        setMessageType("error");
+      }
+    } finally {
+      setDownloadingRun(null);
+    }
+  };
+
   const statusClass =
     messageType === "error"
       ? "text-text"
@@ -707,7 +732,7 @@ export default function EvalPanel() {
                 <div key={i} className="flex items-center justify-between gap-2 px-1 py-0.5 hover:bg-line transition">
                   <button
                     onClick={() => loadRunFile(r.filename)}
-                    disabled={loadingRunFile !== null || deletingRun !== null || clearingRuns}
+                    disabled={loadingRunFile !== null || deletingRun !== null || clearingRuns || downloadingRun !== null}
                     className="flex items-center gap-2 flex-1 min-w-0 text-left disabled:opacity-40"
                   >
                     <span className="font-mono text-[11px] text-text truncate flex-1" title={r.filename}>
@@ -725,8 +750,20 @@ export default function EvalPanel() {
                     )}
                   </button>
                   <button
+                    onClick={() => handleDownloadRun(r.filename)}
+                    disabled={downloadingRun !== null || deletingRun !== null || clearingRuns || loadingRunFile !== null}
+                    className="text-muted hover:text-text transition flex-shrink-0 disabled:opacity-40"
+                    aria-label="Download eval run"
+                  >
+                    {downloadingRun === r.filename ? (
+                      <Loader2 className="w-3 h-3 animate-spin" />
+                    ) : (
+                      <Download className="w-3 h-3" />
+                    )}
+                  </button>
+                  <button
                     onClick={() => handleDeleteRun(r.filename)}
-                    disabled={deletingRun !== null || clearingRuns || loadingRunFile !== null}
+                    disabled={deletingRun !== null || clearingRuns || loadingRunFile !== null || downloadingRun !== null}
                     className="text-muted hover:text-text transition flex-shrink-0 disabled:opacity-40"
                     aria-label="Remove eval run"
                   >
@@ -743,7 +780,7 @@ export default function EvalPanel() {
               <div className="pt-1">
                 <button
                   onClick={handleClearRuns}
-                  disabled={clearingRuns || deletingRun !== null}
+                  disabled={clearingRuns || deletingRun !== null || downloadingRun !== null}
                   className="font-mono text-[10px] uppercase tracking-widest text-muted hover:text-text transition disabled:opacity-40"
                 >
                   {clearingRuns ? <Loader2 className="w-3 h-3 animate-spin" /> : "Clear All"}
