@@ -38,7 +38,12 @@ export async function ingestFiles(
   });
   if (!res.ok) {
     const body = await res.text().catch(() => "");
-    throw new Error(`File ingestion failed (${res.status}): ${body.slice(0, 200)}`);
+    let detail = body.slice(0, 200);
+    try {
+      const parsed = JSON.parse(body);
+      if (parsed.error) detail = parsed.error;
+    } catch { /* not JSON, use raw body */ }
+    throw new Error(`File ingestion failed (${res.status}): ${detail}`);
   }
   return res.json();
 }

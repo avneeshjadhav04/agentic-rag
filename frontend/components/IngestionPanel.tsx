@@ -65,7 +65,10 @@ export default function IngestionPanel() {
       const failed = (res.files || []).filter((f: any) => f.status === "error");
       const warned = (res.files || []).filter((f: any) => f.status === "warning");
       const msgs: string[] = [];
-      if (failed.length) msgs.push(`${failed.length} file(s) failed`);
+      if (failed.length) {
+        const details = failed.map((f: any) => `${f.file}: ${f.error || "unknown error"}`).join("; ");
+        msgs.push(`${failed.length} file(s) failed (${details})`);
+      }
       if (warned.length) msgs.push(`${warned.length} file(s) had no extractable text (scanned?)`);
       const hasIssues = failed.length || warned.length || res.ingested === 0;
       const msg = hasIssues

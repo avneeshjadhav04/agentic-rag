@@ -2,6 +2,7 @@
 from typing import List
 
 from fastapi import APIRouter, File, Form, UploadFile
+from fastapi.responses import JSONResponse
 
 from app.ingestion.chunker import chunk_documents
 from app.ingestion.loader import load_files, load_urls
@@ -34,11 +35,18 @@ async def ingest_files(
         content = await file.read()
         file_entries.append((file.filename or "uploaded_file", content))
 
-    documents, file_results = load_files(file_entries)
-    chunks = chunk_documents(documents, chunk_size=chunk_size, chunk_overlap=chunk_overlap)
-    store = _build_store(embed_base_url, embed_model, embed_api_key)
-    store.add_documents(chunks)
-    return {"ingested": len(chunks), "files": file_results}
+    file_results: list[dict] = []
+    try:
+        documents, file_results = load_files(file_entries)
+        chunks = chunk_documents(documents, chunk_size=chunk_size, chunk_overlap=chunk_overlap)
+        store = _build_store(embed_base_url, embed_model, embed_api_key)
+        store.add_documents(chunks)
+        return {"ingested": len(chunks), "files": file_results}
+    except Exception as e:
+        return JSONResponse(
+            status_code=500,
+            content={"ingested": 0, "files": file_results, "error": repr(e)[:300]},
+        )
 
 
 @router.post("/urls")
