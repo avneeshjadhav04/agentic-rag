@@ -1,6 +1,7 @@
 """Chroma vector store wrapper."""
 import os
-from typing import List
+import uuid
+from typing import Callable, List, Optional
 
 from langchain_core.documents import Document
 from langchain_chroma import Chroma
@@ -35,6 +36,50 @@ class ChromaStore:
             store.persist()
         except (NotImplementedError, AttributeError):
             print("ChromaDB>=0.5 auto-persists; skipping explicit persist().")
+
+    def add_documents_with_progress(
+        self,
+        documents: List[Document],
+        progress_callback: Optional[Callable[[dict], None]] = None,
+    ) -> int:
+        """Add documents one-by-one, emitting progress per chunk.
+
+        Embeds each document individually via embed_query and adds it
+        directly to the Chroma collection, bypassing LangChain's batch
+        add_documents path. This lets the caller stream progress events
+        during long ingestions (e.g., 100+ chunks) so the SSE connection
+        stays alive and the user sees live progress.
+
+        Returns the number of documents successfully added.
+        """
+        if not documents:
+            return 0
+        store = self._get_store()
+        collection = store._collection
+        added = 0
+        total = len(documents)
+        for i, doc in enumerate(documents):
+            text = doc.page_content or ""
+            embedding = self.embeddings.embed_query(text)
+            chunk_id = str(uuid.uuid4())
+            collection.add(
+                ids=[chunk_id],
+                embeddings=[embedding],
+                documents=[text],
+                metadatas=[doc.metadata or {}],
+            )
+            added += 1
+            if progress_callback:
+                progress_callback({
+                    "stage": "embedding",
+                    "current": added,
+                    "total": total,
+                })
+        try:
+            store.persist()
+        except (NotImplementedError, AttributeError):
+            print("ChromaDB>=0.5 auto-persists; skipping explicit persist().")
+        return added
 
     def similarity_search(self, query: str, k: int = 4) -> List[Document]:
         store = self._get_store()

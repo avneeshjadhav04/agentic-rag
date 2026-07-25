@@ -1,12 +1,13 @@
 """Ingestion endpoints for files and URLs."""
-from typing import List
+from typing import Callable, List
 
 from fastapi import APIRouter, File, Form, UploadFile
-from fastapi.responses import JSONResponse
+from fastapi.responses import StreamingResponse
 
 from app.ingestion.chunker import chunk_documents
 from app.ingestion.loader import load_files, load_urls
 from app.models.factory import get_embeddings
+from app.sse import SSE_HEADERS, stream_threaded
 from app.vectorstore.chroma_store import ChromaStore
 
 router = APIRouter(prefix="/api/ingest", tags=["ingestion"])
@@ -30,23 +31,31 @@ async def ingest_files(
     chunk_size: int = Form(default=1000),
     chunk_overlap: int = Form(default=200),
 ):
+    # Read uploaded files in the async endpoint (UploadFile.read is async),
+    # then stream the blocking load→chunk→embed work via SSE so the proxy
+    # doesn't kill the idle connection on large files (100+ chunks can take
+    # 20-50s of sequential embedding calls).
     file_entries: list[tuple[str, bytes]] = []
     for file in files:
         content = await file.read()
         file_entries.append((file.filename or "uploaded_file", content))
 
-    file_results: list[dict] = []
-    try:
+    def target(progress_callback: Callable[[dict], None]) -> dict:
+        progress_callback({"stage": "loading", "message": "Parsing uploaded files…"})
         documents, file_results = load_files(file_entries)
+
+        progress_callback({"stage": "chunking", "message": f"Splitting {len(documents)} documents into chunks…"})
         chunks = chunk_documents(documents, chunk_size=chunk_size, chunk_overlap=chunk_overlap)
+
+        if not chunks:
+            return {"ingested": 0, "files": file_results}
+
+        progress_callback({"stage": "embedding", "current": 0, "total": len(chunks)})
         store = _build_store(embed_base_url, embed_model, embed_api_key)
-        store.add_documents(chunks)
-        return {"ingested": len(chunks), "files": file_results}
-    except Exception as e:
-        return JSONResponse(
-            status_code=500,
-            content={"ingested": 0, "files": file_results, "error": repr(e)[:300]},
-        )
+        added = store.add_documents_with_progress(chunks, progress_callback=progress_callback)
+        return {"ingested": added, "files": file_results}
+
+    return StreamingResponse(stream_threaded(target), media_type="text/event-stream", headers=SSE_HEADERS)
 
 
 @router.post("/urls")

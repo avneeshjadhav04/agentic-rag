@@ -16,12 +16,16 @@ export async function fetchDefaults(): Promise<{generation: ProviderField; evalu
   return res.json();
 }
 
-export async function ingestFiles(
+export async function* streamIngestFiles(
   files: FileList,
   embedding: ProviderField,
   chunkSize: number,
   chunkOverlap: number
-): Promise<any> {
+): AsyncGenerator<
+  { type: "progress" | "done" | "error"; value: any },
+  { ingested: number; files: any[] } | null,
+  unknown
+> {
   const form = new FormData();
   for (let i = 0; i < files.length; i++) {
     form.append("files", files[i]);
@@ -32,20 +36,65 @@ export async function ingestFiles(
   form.append("chunk_size", String(chunkSize));
   form.append("chunk_overlap", String(chunkOverlap));
 
+  const controller = new AbortController();
+  const timeout = setTimeout(() => controller.abort(), 600000);
   const res = await fetch(`${API_BASE}/api/ingest/files`, {
     method: "POST",
     body: form,
+    signal: controller.signal,
   });
+  clearTimeout(timeout);
   if (!res.ok) {
     const body = await res.text().catch(() => "");
-    let detail = body.slice(0, 200);
-    try {
-      const parsed = JSON.parse(body);
-      if (parsed.error) detail = parsed.error;
-    } catch { /* not JSON, use raw body */ }
-    throw new Error(`File ingestion failed (${res.status}): ${detail}`);
+    throw new Error(`File ingestion failed (${res.status}): ${body.slice(0, 200)}`);
   }
-  return res.json();
+  if (!res.body) throw new Error("No response body");
+
+  const reader = res.body.getReader();
+  const decoder = new TextDecoder();
+  let buffer = "";
+  let currentEvent = "";
+
+  while (true) {
+    const { value, done } = await reader.read();
+    if (value) {
+      buffer += decoder.decode(value, { stream: !done });
+    }
+    const lines = buffer.split("\n");
+    buffer = lines.pop() || "";
+
+    for (const line of lines) {
+      if (line.startsWith("event: ")) {
+        currentEvent = line.replace("event: ", "").trim();
+      } else if (line.startsWith("data: ")) {
+        const data = line.replace("data: ", "");
+        if (currentEvent === "done") {
+          try {
+            const parsed = JSON.parse(data);
+            return { ingested: parsed.ingested ?? 0, files: parsed.files ?? [] };
+          } catch {
+            return null;
+          }
+        }
+        if (currentEvent === "error") {
+          try {
+            const parsed = JSON.parse(data);
+            throw new Error(parsed.message || "File ingestion failed");
+          } catch (e) {
+            throw e;
+          }
+        }
+        if (currentEvent === "progress") {
+          yield { type: "progress", value: JSON.parse(data) };
+        }
+      } else if (line.trim() === "") {
+        currentEvent = "";
+      }
+    }
+    if (done) break;
+  }
+
+  return null;
 }
 
 export async function ingestUrls(

@@ -1,7 +1,7 @@
 "use client";
 
 import { useConfigStore } from "@/store/configStore";
-import { clearStore, deleteSource, ingestFiles, ingestUrls, listSources } from "@/lib/api";
+import { clearStore, deleteSource, streamIngestFiles, ingestUrls, listSources } from "@/lib/api";
 import { useState, useEffect, useCallback, useMemo, useRef } from "react";
 import { Loader2, RefreshCw, Plus, Minus, X } from "lucide-react";
 import { SourceInfo } from "@/types";
@@ -23,6 +23,7 @@ export default function IngestionPanel() {
   const [urls, setUrls] = useState("");
   const [files, setFiles] = useState<FileList | null>(null);
   const [filesLoading, setFilesLoading] = useState(false);
+  const [ingestProgress, setIngestProgress] = useState("");
   const [urlsLoading, setUrlsLoading] = useState(false);
   const [clearLoading, setClearLoading] = useState(false);
   const loading = filesLoading || urlsLoading || clearLoading;
@@ -59,23 +60,38 @@ export default function IngestionPanel() {
   const handleFiles = async () => {
     if (!files || files.length === 0) return;
     setFilesLoading(true);
+    setIngestProgress("");
     setMessage("");
     try {
-      const res = await ingestFiles(files, effectiveEmbedding, chunkSize, chunkOverlap);
-      const failed = (res.files || []).filter((f: any) => f.status === "error");
-      const warned = (res.files || []).filter((f: any) => f.status === "warning");
-      const msgs: string[] = [];
-      if (failed.length) {
-        const details = failed.map((f: any) => `${f.file}: ${f.error || "unknown error"}`).join("; ");
-        msgs.push(`${failed.length} file(s) failed (${details})`);
+      const generator = streamIngestFiles(files, effectiveEmbedding, chunkSize, chunkOverlap);
+      let result = await generator.next();
+      let res: { ingested: number; files: any[] } | null = null;
+      while (!result.done) {
+        if (result.value?.type === "progress") {
+          const p = result.value.value;
+          if (p.stage === "loading") setIngestProgress("Parsing files…");
+          else if (p.stage === "chunking") setIngestProgress("Splitting documents…");
+          else if (p.stage === "embedding" && p.total) setIngestProgress(`Embedding chunk ${p.current}/${p.total}…`);
+        }
+        result = await generator.next();
       }
-      if (warned.length) msgs.push(`${warned.length} file(s) had no extractable text (scanned?)`);
-      const hasIssues = failed.length || warned.length || res.ingested === 0;
-      const msg = hasIssues
-        ? `Ingested ${res.ingested} chunks (${msgs.join("; ") || "0 chunks"})`
-        : `Ingested ${res.ingested} chunks from ${files.length} files.`;
-      setMessage(msg);
-      setMessageType(failed.length ? "error" : warned.length || res.ingested === 0 ? "warn" : "info");
+      res = result.value;
+      if (res) {
+        const failed = (res.files || []).filter((f: any) => f.status === "error");
+        const warned = (res.files || []).filter((f: any) => f.status === "warning");
+        const msgs: string[] = [];
+        if (failed.length) {
+          const details = failed.map((f: any) => `${f.file}: ${f.error || "unknown error"}`).join("; ");
+          msgs.push(`${failed.length} file(s) failed (${details})`);
+        }
+        if (warned.length) msgs.push(`${warned.length} file(s) had no extractable text (scanned?)`);
+        const hasIssues = failed.length || warned.length || res.ingested === 0;
+        const msg = hasIssues
+          ? `Ingested ${res.ingested} chunks (${msgs.join("; ") || "0 chunks"})`
+          : `Ingested ${res.ingested} chunks from ${files.length} files.`;
+        setMessage(msg);
+        setMessageType(failed.length ? "error" : warned.length || res.ingested === 0 ? "warn" : "info");
+      }
       setFiles(null);
       if (fileInputRef.current) fileInputRef.current.value = "";
       refreshSources();
@@ -84,6 +100,7 @@ export default function IngestionPanel() {
       setMessageType("error");
     } finally {
       setFilesLoading(false);
+      setIngestProgress("");
     }
   };
 
@@ -161,6 +178,9 @@ export default function IngestionPanel() {
           {filesLoading && <Loader2 className="w-3.5 h-3.5 animate-spin" />}
           Ingest Files
         </button>
+        {ingestProgress && (
+          <p className="font-mono text-[10px] uppercase tracking-widest text-muted">{ingestProgress}</p>
+        )}
       </section>
 
       {/* URL ingestion */}
