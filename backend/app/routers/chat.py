@@ -11,6 +11,7 @@ from langchain_core.messages import AIMessage, HumanMessage
 from app.agents.graph import build_agentic_rag_graph
 from app.agents.state import AgentState
 from app.models.factory import get_generation_llm, get_embeddings
+from app.sse import SSE_HEADERS
 from app.vectorstore.chroma_store import ChromaStore
 
 router = APIRouter(prefix="/api/chat", tags=["chat"])
@@ -112,4 +113,4 @@ async def chat_stream(
         except Exception as e:
             yield f"event: error\ndata: {json.dumps({'message': str(e)})}\n\n"
 
-    return StreamingResponse(event_generator(), media_type="text/event-stream")
+    return StreamingResponse(event_generator(), media_type="text/event-stream", headers=SSE_HEADERS)
