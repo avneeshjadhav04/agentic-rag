@@ -4,7 +4,7 @@ from typing import Callable, List
 from fastapi import APIRouter, File, Form, UploadFile
 from fastapi.responses import StreamingResponse
 
-from app.ingestion.chunker import chunk_documents
+from app.ingestion.chunker import chunk_documents_parent_child
 from app.ingestion.loader import load_files, load_urls
 from app.models.factory import get_embeddings
 from app.sse import SSE_HEADERS, stream_threaded
@@ -45,14 +45,14 @@ async def ingest_files(
         documents, file_results = load_files(file_entries)
 
         progress_callback({"stage": "chunking", "message": f"Splitting {len(documents)} documents into chunks…"})
-        chunks = chunk_documents(documents, chunk_size=chunk_size, chunk_overlap=chunk_overlap)
+        child_chunks, parent_docs = chunk_documents_parent_child(documents, chunk_size=chunk_size, chunk_overlap=chunk_overlap)
 
-        if not chunks:
+        if not child_chunks:
             return {"ingested": 0, "files": file_results}
 
-        progress_callback({"stage": "embedding", "current": 0, "total": len(chunks)})
+        progress_callback({"stage": "embedding", "current": 0, "total": len(child_chunks)})
         store = _build_store(embed_base_url, embed_model, embed_api_key)
-        added = store.add_documents_with_progress(chunks, progress_callback=progress_callback)
+        added = store.add_parent_child_documents(child_chunks, parent_docs, progress_callback=progress_callback)
         return {"ingested": added, "files": file_results}
 
     return StreamingResponse(stream_threaded(target), media_type="text/event-stream", headers=SSE_HEADERS)
@@ -69,10 +69,10 @@ async def ingest_urls(
 ):
     url_list = [u.strip() for u in urls.replace(",", "\n").splitlines() if u.strip()]
     documents = load_urls(url_list)
-    chunks = chunk_documents(documents, chunk_size=chunk_size, chunk_overlap=chunk_overlap)
+    child_chunks, parent_docs = chunk_documents_parent_child(documents, chunk_size=chunk_size, chunk_overlap=chunk_overlap)
     store = _build_store(embed_base_url, embed_model, embed_api_key)
-    store.add_documents(chunks)
-    return {"ingested": len(chunks), "url_count": len(url_list)}
+    store.add_parent_child_documents(child_chunks, parent_docs)
+    return {"ingested": len(child_chunks), "url_count": len(url_list)}
 
 
 @router.post("/clear")

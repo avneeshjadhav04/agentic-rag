@@ -606,9 +606,18 @@ def generate_goldens_streaming(
 
     embeddings = get_embeddings(emb_cfg["base_url"], emb_cfg["model"], emb_cfg["api_key"])
     store = ChromaStore(embeddings=embeddings)
-    collection = store._get_store()._collection
-    results = collection.get(include=["documents"])
-    docs = results.get("documents", [])
+
+    # Prefer parent docs (full uploaded documents) as synthesis context so
+    # goldens are synthesized from coherent, unsplit content. Fall back to
+    # child chunks if parents.json does not exist (stores ingested before
+    # parent-doc retrieval was added) — graceful degradation, no re-ingest.
+    parent_docs = store.get_all_parents()
+    if parent_docs:
+        docs = [d.page_content for d in parent_docs]
+    else:
+        collection = store._get_store()._collection
+        results = collection.get(include=["documents"])
+        docs = results.get("documents", [])
     if not docs:
         raise ValueError("Chroma store is empty. Ingest documents first (via the UI or API).")
 

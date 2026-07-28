@@ -11,7 +11,7 @@ from langchain_core.messages import HumanMessage, SystemMessage
 from langchain_openai import ChatOpenAI, OpenAIEmbeddings
 
 from app.search.webfetch import fetch_url
-from app.vectorstore.chroma_store import ChromaStore
+from app.vectorstore.chroma_store import ChromaStore, PARENT_CHAR_CAP, WINDOW_RADIUS
 
 from .state import AgentState
 
@@ -51,17 +51,57 @@ def _llm_json_invoke(llm: ChatOpenAI, prompt: str, fallback: dict) -> dict:
         return fallback
 
 
+def _build_window(children: list, target_start: int, radius: int = 2) -> str:
+    """Join a window of neighboring child chunks around ``target_start``.
+
+    Used by the retrieve node as a safety-cap fallback when a parent doc
+    exceeds ``PARENT_CHAR_CAP``. ``children`` must be sorted by
+    ``start_index`` ascending.
+    """
+    if not children:
+        return ""
+    target_idx = 0
+    for i, d in enumerate(children):
+        if d.metadata.get("start_index", 0) == target_start:
+            target_idx = i
+            break
+    lo = max(0, target_idx - radius)
+    hi = min(len(children), target_idx + radius + 1)
+    return "\n".join(d.page_content for d in children[lo:hi])
+
+
 def retrieve_node_factory(vector_store: ChromaStore, k: int = 4):
     def retrieve(state: AgentState) -> AgentState:
         question = state.get("refined_question") or state["question"]
-        docs = vector_store.similarity_search(question, k=k)
-        state["documents"] = [
-            {"content": doc.page_content, "metadata": doc.metadata}
-            for doc in docs
-        ]
+        child_docs = vector_store.similarity_search(question, k=k)
+        parents = vector_store.get_parents(
+            list({d.metadata.get("source_id") for d in child_docs if d.metadata.get("source_id")})
+        )
+        expanded: list[dict] = []
+        seen_parent_ids: set[str] = set()
+        for doc in child_docs:
+            sid = doc.metadata.get("source_id")
+            parent = parents.get(sid) if sid else None
+            if parent and len(parent.page_content) <= PARENT_CHAR_CAP:
+                if sid in seen_parent_ids:
+                    continue
+                expanded.append({"content": parent.page_content, "metadata": parent.metadata})
+                seen_parent_ids.add(sid)
+            else:
+                # Backward-compat / safety-cap fallback: either no parents.json
+                # (old store) or the parent exceeds the char cap. Use the child
+                # chunk itself, or a window of its neighbors when parents exist
+                # but are too large.
+                if parent is None:
+                    expanded.append({"content": doc.page_content, "metadata": doc.metadata})
+                else:
+                    children = vector_store.get_children_by_source(sid)
+                    window = _build_window(children, doc.metadata.get("start_index", 0), WINDOW_RADIUS)
+                    expanded.append({"content": window or doc.page_content, "metadata": doc.metadata})
+        state["documents"] = expanded
         source_counts = Counter(
-            (doc.metadata.get("source_id", "unknown"), doc.metadata.get("source", "unknown"))
-            for doc in docs
+            (doc.get("metadata", {}).get("source_id", "unknown"), doc.get("metadata", {}).get("source", "unknown"))
+            for doc in expanded
         )
         sources_summary = [
             {"source_id": sid, "source_name": name, "chunks": count}
@@ -70,7 +110,7 @@ def retrieve_node_factory(vector_store: ChromaStore, k: int = 4):
         _add_trace(
             state,
             "retrieve",
-            {"question": question, "count": len(docs), "sources": sources_summary},
+            {"question": question, "count": len(expanded), "sources": sources_summary},
         )
         return state
 
@@ -89,11 +129,11 @@ def grade_documents_node_factory(llm: ChatOpenAI):
         for i, doc in enumerate(state["documents"]):
             content = doc["content"]
             prompt = (
-                "You are a relevance grader. Given a user question and a document chunk, "
+                "You are a relevance grader. Given a user question and a document, "
                 "respond with JSON: "
                 "{\"relevant\": true/false, \"score\": <0-10>, \"reason\": \"...\"}\n\n"
                 f"Question: {question}\n\n"
-                f"Document chunk:\n{content}\n\n"
+                f"Document:\n{content}\n\n"
                 "JSON:"
             )
             result = _llm_json_invoke(llm, prompt, {"relevant": True, "score": 5})
