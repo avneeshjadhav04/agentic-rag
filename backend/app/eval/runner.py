@@ -199,11 +199,11 @@ def get_golden_providers() -> dict:
 
 
 def list_goldens() -> List[dict]:
-    """Return [{index, input, expected_output, grounded, source_context}] for
-    each golden on disk, or [] if none.
+    """Return [{index, input, expected_output, source_context}] for each
+    golden on disk, or [] if none.
 
-    grounded defaults to True and source_context to [] for datasets generated
-    before those fields existed, keeping the shape backward-compatible.
+    source_context defaults to [] for datasets generated before that field
+    existed, keeping the shape backward-compatible.
     """
     data = _read_golden_file()
     if data is None:
@@ -214,7 +214,6 @@ def list_goldens() -> List[dict]:
             "index": i,
             "input": g.get("input", ""),
             "expected_output": g.get("expected_output", ""),
-            "grounded": g.get("grounded", True),
             "source_context": g.get("source_context", []),
         }
         for i, g in enumerate(goldens)
@@ -633,6 +632,8 @@ def generate_goldens_streaming(
     #
     # filtration_config: DeepEval's native critic-LLM quality filter rejects
     #   low-quality synthetic goldens during synthesis (no custom prompt).
+    #   max_quality_retries=1 caps the critic/rewrite loop at one pass instead
+    #   of the default 3, cutting filtration LLM calls from up to 6/golden to 2.
     # evolution_config: the Synthesizer's default evolves extracted questions
     #   via 7 strategies in equal proportion, including HYPOTHETICAL (what-if
     #   questions that go BEYOND the source text), REASONING, and COMPARATIVE.
@@ -647,6 +648,7 @@ def generate_goldens_streaming(
         filtration_config=FiltrationConfig(
             critic_model=judge,
             synthetic_input_quality_threshold=0.5,
+            max_quality_retries=1,
         ),
         evolution_config=EvolutionConfig(
             evolutions={
@@ -661,61 +663,18 @@ def generate_goldens_streaming(
         max_goldens_per_context=1,
     )
 
-    # Groundedness flag using DeepEval's own GEval (criteria-based metric,
-    # not a custom prompt). Each synthesized expected_output is checked against
-    # its own source context; ungrounded goldens are KEPT but marked
-    # grounded=False so the human curator has the final call. The judge is the
-    # evaluation provider, kept independent of the generation model by config.
-    # GEval is used rather than FaithfulnessMetric because the invention
-    # failure mode is "claims added beyond context" (e.g. a correct Rust-vs-C++
-    # table drawn from training knowledge), not "claims contradicting context" —
-    # FaithfulnessMetric misses the former, GEval's criteria catch it.
-    if progress_callback:
-        progress_callback({"stage": "groundedness_check", "message": f"Verifying {len(goldens_list)} goldens against source context…"})
-
-    from deepeval.metrics import GEval
-    from deepeval.test_case import LLMTestCase, SingleTurnParams
-
-    grounded_count = 0
+    # Persist DeepEval's golden.context as source_context per golden. This is
+    # pure bookkeeping (no LLM calls) and, with the groundedness flag removed,
+    # is the sole curation aid: each expected output is auditable against the
+    # exact source chunk it was synthesized from, enabling bias-free manual
+    # review (the project README already mandates curating goldens).
     goldens = []
     for golden in goldens_list:
         source_context = golden.context or []
-        grounded = True
-        if source_context and golden.expected_output:
-            tc = LLMTestCase(
-                input=golden.input or "",
-                actual_output=golden.expected_output,
-                retrieval_context=source_context if isinstance(source_context, list) else [source_context],
-            )
-            # GEval with a custom criterion is the right detector here: unlike
-            # FaithfulnessMetric (which only flags *contradictions* with context
-            # and so lets invented-but-factually-correct content slip through),
-            # this flags any claim in the expected output that is not directly
-            # supported by the source context — i.e. additions / outside
-            # knowledge, which is exactly the unsatisfiable-golden failure mode.
-            metric = GEval(
-                name="Groundedness",
-                criteria="Is every claim in the actual output directly supported by the retrieval context? Penalize any information that requires outside knowledge or is not explicitly stated in the context.",
-                evaluation_params=[SingleTurnParams.ACTUAL_OUTPUT, SingleTurnParams.RETRIEVAL_CONTEXT],
-                threshold=0.5,
-                model=judge,
-                async_mode=False,
-            )
-            try:
-                metric.measure(tc)
-                grounded = bool(metric.is_successful())
-            except Exception:
-                grounded = True
-        if grounded:
-            grounded_count += 1
         goldens.append({
             "input": golden.input,
             "expected_output": golden.expected_output,
-            # DeepEval attaches the source chunk(s) used to synthesize each
-            # golden; persisting them makes curation auditable against the
-            # corpus without introducing any judgment of our own.
             "source_context": source_context if isinstance(source_context, list) else ([source_context] if source_context else []),
-            "grounded": grounded,
         })
 
     output = {
@@ -731,6 +690,6 @@ def generate_goldens_streaming(
         json.dump(output, f, indent=2, ensure_ascii=False)
 
     if progress_callback:
-        progress_callback({"stage": "done", "message": f"Wrote {len(goldens)} goldens ({grounded_count} grounded, {len(goldens) - grounded_count} flagged for review)."})
+        progress_callback({"stage": "done", "message": f"Wrote {len(goldens)} goldens."})
 
     return {"count": len(goldens), "path": str(GOLDEN_DATASET_PATH)}
