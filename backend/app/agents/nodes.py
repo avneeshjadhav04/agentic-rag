@@ -1,31 +1,24 @@
 """LangGraph nodes for the multi-agent RAG workflow.
 
-Architecture: supervisor → researcher ↔ research_tools → writer → quality_check
-The supervisor is an LLM that decides which sub-agent to call next. The
-researcher is a tool-calling ReAct agent (vector_search, web_fetch, handoff).
-The writer synthesizes a grounded answer from gathered context. The
-quality_check critic grades the answer and routes feedback back to the
-supervisor on failure.
+Architecture: supervisor → researcher ↔ research_tools → supervisor
+The supervisor uses with_structured_output for routing decisions. The
+researcher uses bind_tools for native tool-calling (vector_search,
+web_fetch, handoff). The writer synthesizes a grounded answer. The
+quality_check critic uses with_structured_output to grade the answer.
 """
-import json
 import re
 import threading
 from collections import Counter
-from typing import Optional
+from typing import Literal, Optional
 
 from langchain_core.messages import AIMessage, HumanMessage, SystemMessage, ToolMessage
 from langchain_openai import ChatOpenAI
+from pydantic import BaseModel, Field
 
 from app.vectorstore.chroma_store import ChromaStore
 
 from .state import AgentState
-from .tools import (
-    VECTOR_SEARCH_DESC,
-    WEB_FETCH_DESC,
-    HANDOFF_DESC,
-    vector_search as _vector_search,
-    web_fetch as _web_fetch,
-)
+from .tools import _vector_search, _web_fetch
 
 _trace_buffers: dict[int, list[dict]] = {}
 _trace_buffers_lock = threading.Lock()
@@ -50,20 +43,21 @@ def _add_trace(state: AgentState, step: str, detail: dict) -> None:
         buf.append(entry)
 
 
-def _llm_json_invoke(llm: ChatOpenAI, prompt: str, fallback: dict) -> dict:
-    try:
-        response = llm.invoke(prompt)
-        text = response.content if hasattr(response, "content") else str(response)
-        match = re.search(r"```json\s*(.*?)\s*```", text, re.DOTALL)
-        if match:
-            text = match.group(1)
-        else:
-            obj_match = re.search(r"\{.*\}", text, re.DOTALL)
-            if obj_match:
-                text = obj_match.group(0)
-        return json.loads(text.strip())
-    except Exception:
-        return fallback
+# ---------------------------------------------------------------------------
+# Pydantic schemas for with_structured_output
+# ---------------------------------------------------------------------------
+
+class RouteDecision(BaseModel):
+    next: Literal["researcher", "writer", "finish"] = Field(
+        description="Which agent to call next"
+    )
+    reason: str = Field(description="Brief reasoning for the decision")
+
+
+class QualityResult(BaseModel):
+    grounded: bool = Field(description="Is the answer grounded in the context?")
+    answers_question: bool = Field(description="Does the answer address the question?")
+    feedback: str = Field(description="Feedback on the answer quality")
 
 
 # ---------------------------------------------------------------------------
@@ -71,6 +65,8 @@ def _llm_json_invoke(llm: ChatOpenAI, prompt: str, fallback: dict) -> dict:
 # ---------------------------------------------------------------------------
 
 def supervisor_node_factory(llm: ChatOpenAI):
+    structured_llm = llm.with_structured_output(RouteDecision, method="function_calling")
+
     def supervisor(state: AgentState) -> AgentState:
         question = state["question"]
         has_docs = bool(state["documents"])
@@ -106,8 +102,6 @@ def supervisor_node_factory(llm: ChatOpenAI):
             f"Current status:\n{status}\n\n"
             f"User question: {question}\n\n"
             f"Quality check attempts so far: {steps}\n\n"
-            "Respond with ONLY a JSON object — no text before or after: "
-            '{"next": "researcher" | "writer" | "finish", "reason": "..."}\n\n'
             "Guidelines:\n"
             "- If no documents have been gathered yet, call researcher.\n"
             "- If documents have been gathered and no answer exists, call writer.\n"
@@ -115,14 +109,16 @@ def supervisor_node_factory(llm: ChatOpenAI):
             "researcher to find better context.\n"
             "- If the answer failed quality check due to poor synthesis (not missing "
             "info), call writer to rewrite.\n"
-            "- If max attempts are reached, call finish.\n"
-            "JSON:"
+            "- If max attempts are reached, call finish."
         )
-        result = _llm_json_invoke(llm, prompt, {"next": "researcher", "reason": ""})
-        next_agent = result.get("next", "researcher")
-        if next_agent not in ("researcher", "writer", "finish"):
+        try:
+            result = structured_llm.invoke(prompt)
+            next_agent = result.next
+            reason = result.reason
+        except Exception:
             next_agent = "researcher" if not has_docs else "writer"
-        reason = result.get("reason", "")
+            reason = "Fallback: unable to parse supervisor decision"
+
         state["next_agent"] = next_agent
         _add_trace(state, "supervisor", {"next": next_agent, "reason": reason})
         return state
@@ -138,22 +134,19 @@ def route_after_supervisor(state: AgentState) -> str:
 
 
 # ---------------------------------------------------------------------------
-# Researcher — tool-calling ReAct agent for information gathering
+# Researcher — tool-calling agent using bind_tools
 # ---------------------------------------------------------------------------
 
 _MAX_TOOL_CALLS = 8
 
 
-def researcher_node_factory(llm: ChatOpenAI, allow_web_fetch: bool, max_tool_calls: int = _MAX_TOOL_CALLS):
+def researcher_node_factory(llm: ChatOpenAI, tools: list, max_tool_calls: int = _MAX_TOOL_CALLS):
+    llm_with_tools = llm.bind_tools(tools, parallel_tool_calls=False)
+
     def researcher(state: AgentState) -> AgentState:
         question = state["question"]
         tool_call_count = state.get("tool_call_count", 0)
         feedback = state.get("quality_feedback", "")
-
-        tool_descriptions = [VECTOR_SEARCH_DESC, HANDOFF_DESC]
-        if allow_web_fetch:
-            tool_descriptions.append(WEB_FETCH_DESC)
-        tools_text = "\n\n".join(tool_descriptions)
 
         feedback_text = ""
         if feedback and tool_call_count == 0:
@@ -166,9 +159,6 @@ def researcher_node_factory(llm: ChatOpenAI, allow_web_fetch: bool, max_tool_cal
         system_content = (
             "You are a research agent in a multi-agent RAG system. Your job is to "
             "gather relevant information to answer the user's question.\n\n"
-            f"Available tools:\n\n{tools_text}\n\n"
-            "Respond with ONLY a JSON object — no text before or after:\n"
-            '  {"tool": "<tool_name>", "args": {...}, "thought": "brief reasoning"}\n\n'
             "Rules:\n"
             "- Always start by searching the local knowledge base with vector_search.\n"
             "- If the local results are insufficient, you may call web_fetch with a "
@@ -196,40 +186,38 @@ def researcher_node_factory(llm: ChatOpenAI, allow_web_fetch: bool, max_tool_cal
                 "You must now call handoff to pass control to the supervisor."
             )))
 
-        response = llm.invoke(messages)
-        text = response.content if hasattr(response, "content") else str(response)
+        response = llm_with_tools.invoke(messages)
 
-        match = re.search(r"```json\s*(.*?)\s*```", text, re.DOTALL)
-        if match:
-            text = match.group(1)
+        tool = "handoff"
+        args: dict = {}
+        tool_call_id: Optional[str] = None
+        thought = response.content if hasattr(response, "content") else ""
+
+        if response.tool_calls:
+            tc = response.tool_calls[0]
+            tool = tc["name"]
+            args = tc["args"] or {}
+            tool_call_id = tc["id"]
         else:
-            obj_match = re.search(r"\{.*\}", text, re.DOTALL)
-            if obj_match:
-                text = obj_match.group(0)
-
-        try:
-            result = json.loads(text.strip())
-            tool = result.get("tool", "handoff")
-            args = result.get("args", {}) or {}
-            thought = result.get("thought", "")
-        except (json.JSONDecodeError, AttributeError):
-            tool = "handoff"
-            args = {}
-            thought = "Unable to parse response — handing off to supervisor."
+            thought = thought or "No tool call — handing off to supervisor."
 
         if force_handoff and tool != "handoff":
             tool = "handoff"
             args = {}
+            tool_call_id = None
             thought = f"Reached max tool calls ({max_tool_calls}) — forcing handoff."
 
         if tool not in ("vector_search", "web_fetch", "handoff"):
             tool = "handoff"
-        if tool == "web_fetch" and not allow_web_fetch:
-            tool = "handoff"
-            thought = "Web fetch is disabled — handing off to supervisor."
+            tool_call_id = None
+
+        # Append the real AIMessage so the researcher sees its own tool call
+        # on the next loop iteration.
+        state["messages"] = state.get("messages", []) + [response]
 
         state["pending_tool"] = tool
         state["pending_args"] = args
+        state["tool_call_id"] = tool_call_id
         _add_trace(state, "researcher", {
             "thought": thought,
             "tool": tool,
@@ -257,6 +245,7 @@ def research_tools_node_factory(vector_store: ChromaStore, llm: ChatOpenAI, k: i
         tool = state.get("pending_tool")
         args = state.get("pending_args", {}) or {}
         question = state["question"]
+        tool_call_id = state.get("tool_call_id")
 
         if tool == "vector_search":
             query = args.get("query", question)
@@ -264,8 +253,7 @@ def research_tools_node_factory(vector_store: ChromaStore, llm: ChatOpenAI, k: i
             if docs:
                 state["documents"].extend(docs)
             state["messages"] = state.get("messages", []) + [
-                AIMessage(content=f'[vector_search query="{query}"]'),
-                ToolMessage(content=result_text, tool_call_id=f"vs_{state.get('tool_call_count', 0)}"),
+                ToolMessage(content=result_text, tool_call_id=tool_call_id or ""),
             ]
             source_counts = Counter(
                 (doc.get("metadata", {}).get("source_id", "unknown"),
@@ -290,8 +278,7 @@ def research_tools_node_factory(vector_store: ChromaStore, llm: ChatOpenAI, k: i
             if docs:
                 state["documents"].extend(docs)
             state["messages"] = state.get("messages", []) + [
-                AIMessage(content=f'[web_fetch url="{url}"]'),
-                ToolMessage(content=result_text, tool_call_id=f"wf_{state.get('tool_call_count', 0)}"),
+                ToolMessage(content=result_text, tool_call_id=tool_call_id or ""),
             ]
             _add_trace(state, "tool_result", {
                 "tool": "web_fetch",
@@ -303,6 +290,7 @@ def research_tools_node_factory(vector_store: ChromaStore, llm: ChatOpenAI, k: i
         state["tool_call_count"] = state.get("tool_call_count", 0) + 1
         state["pending_tool"] = None
         state["pending_args"] = None
+        state["tool_call_id"] = None
         return state
 
     return research_tools
@@ -370,6 +358,8 @@ def writer_node_factory(llm: ChatOpenAI):
 # ---------------------------------------------------------------------------
 
 def quality_check_node_factory(llm: ChatOpenAI):
+    structured_llm = llm.with_structured_output(QualityResult, method="function_calling")
+
     def quality_check(state: AgentState) -> AgentState:
         docs = state["documents"]
         if not docs:
@@ -392,17 +382,21 @@ def quality_check_node_factory(llm: ChatOpenAI):
         context = "\n\n---\n\n".join(d["content"] for d in docs) if docs else ""
         prompt = (
             "You are a quality checker. Given a question, an answer, and supporting context, "
-            "Respond with ONLY a JSON object — no text before or after: "
-            "{\"grounded\": true/false, \"answers_question\": true/false, \"feedback\": \"...\"}\n\n"
+            "evaluate whether the answer is grounded in the context and addresses the question.\n\n"
             f"Question: {question}\n\n"
             f"Answer: {generation}\n\n"
-            f"Context:\n{context}\n\n"
-            "JSON:"
+            f"Context:\n{context}"
         )
-        result = _llm_json_invoke(llm, prompt, {"grounded": True, "answers_question": True})
-        grounded = bool(result.get("grounded"))
-        answers_question = bool(result.get("answers_question"))
-        feedback = result.get("feedback", "")
+        try:
+            result = structured_llm.invoke(prompt)
+            grounded = result.grounded
+            answers_question = result.answers_question
+            feedback = result.feedback
+        except Exception:
+            grounded = True
+            answers_question = True
+            feedback = "Fallback: unable to parse quality check result"
+
         state["steps"] += 1
         state["quality_passed"] = grounded and answers_question
         if not state["quality_passed"] and state["steps"] < state.get("max_loops", 3):

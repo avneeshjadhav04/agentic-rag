@@ -19,4 +19,5 @@ class AgentState(TypedDict):
     pending_tool: Optional[str]
     pending_args: Optional[dict]
     tool_call_count: int
+    tool_call_id: Optional[str]
     quality_feedback: Optional[str]

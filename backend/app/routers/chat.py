@@ -83,6 +83,7 @@ async def chat_stream(
                 "pending_tool": None,
                 "pending_args": None,
                 "tool_call_count": 0,
+                "tool_call_id": None,
                 "quality_feedback": None,
             }
 

@@ -4,10 +4,10 @@ Topology:
     supervisor → researcher ↔ research_tools → supervisor
     supervisor → writer → quality_check → supervisor (or END)
 
-The supervisor is an LLM that decides which sub-agent to call. The researcher
-is a tool-calling ReAct agent (vector_search, web_fetch, handoff). The writer
-synthesizes a grounded answer. The quality_check critic grades the answer and
-routes feedback back to the supervisor on failure.
+The supervisor uses with_structured_output for routing. The researcher
+uses bind_tools for native tool-calling (vector_search, web_fetch, handoff).
+The writer synthesizes a grounded answer. The quality_check critic grades
+the answer and routes feedback back to the supervisor on failure.
 """
 from langchain_openai import ChatOpenAI, OpenAIEmbeddings
 
@@ -24,6 +24,7 @@ from .nodes import (
     writer_node_factory,
 )
 from .state import AgentState
+from .tools import build_research_tools
 
 try:
     from langgraph.graph import END, StateGraph
@@ -42,13 +43,12 @@ def build_agentic_rag_graph(
     if StateGraph is None:
         raise RuntimeError("langgraph is not installed")
 
+    tools = build_research_tools(vector_store, retrieval_k, llm, web_search_enabled)
+
     workflow = StateGraph(AgentState)
 
     workflow.add_node("supervisor", supervisor_node_factory(llm))
-    workflow.add_node("researcher", researcher_node_factory(
-        llm,
-        allow_web_fetch=web_search_enabled,
-    ))
+    workflow.add_node("researcher", researcher_node_factory(llm, tools))
     workflow.add_node("research_tools", research_tools_node_factory(vector_store, llm, k=retrieval_k))
     workflow.add_node("writer", writer_node_factory(llm))
     workflow.add_node("quality_check", quality_check_node_factory(llm))
