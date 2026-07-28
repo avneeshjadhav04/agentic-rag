@@ -149,6 +149,15 @@ input[type="range"]::-moz-range-thumb {
   animation: gradient-shift 2s linear infinite;
 }
 
+.gradient-working-dark {
+  background: linear-gradient(90deg, #333333 0%, #888888 50%, #333333 100%);
+  background-size: 200% 100%;
+  -webkit-background-clip: text;
+  -webkit-text-fill-color: transparent;
+  background-clip: text;
+  animation: gradient-shift 2s linear infinite;
+}
+
 @keyframes blink {
   0%, 100% { opacity: 1; }
   50% { opacity: 0; }
