@@ -612,16 +612,8 @@ export default function EvalPanel() {
       {/* Empty state */}
       {!summary && !running && (
         <p className="font-mono text-[10px] uppercase tracking-widest text-muted">
-          No eval results yet. Run evals or click refresh to load from disk.
+          No eval results yet. Run evals to get started.
         </p>
-      )}
-
-      {/* Refresh from disk */}
-      {!running && (
-        <button onClick={refreshResults} disabled={loadingResults} className={btnOutline}>
-          {loadingResults && <Loader2 className="w-3.5 h-3.5 animate-spin" />}
-          Load Latest Results
-        </button>
       )}
 
       {/* Stored Goldens */}
