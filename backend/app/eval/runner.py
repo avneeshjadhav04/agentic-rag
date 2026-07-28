@@ -607,26 +607,38 @@ def generate_goldens_streaming(
     embeddings = get_embeddings(emb_cfg["base_url"], emb_cfg["model"], emb_cfg["api_key"])
     store = ChromaStore(embeddings=embeddings)
 
-    # Prefer parent docs (full uploaded documents) as synthesis context so
-    # goldens are synthesized from coherent, unsplit content. Fall back to
-    # child chunks if parents.json does not exist (stores ingested before
-    # parent-doc retrieval was added) — graceful degradation, no re-ingest.
-    parent_docs = store.get_all_parents()
-    if parent_docs:
-        docs = [d.page_content for d in parent_docs]
-    else:
-        collection = store._get_store()._collection
-        results = collection.get(include=["documents"])
-        docs = results.get("documents", [])
-    if not docs:
+    # Build paired [child, parent] contexts for synthesis: each child chunk
+    # focuses the generated question (per-chunk diversity), while its parent
+    # doc (the full uploaded file) provides coherent, unsplit context for the
+    # expected output — so goldens are answerable from the same full-document
+    # context that parent-document retrieval now returns to the RAG graph.
+    # Falls back to [child] alone if no parents.json exists (stores ingested
+    # before parent-doc retrieval was added) — graceful degradation, no re-ingest.
+    collection = store._get_store()._collection
+    results = collection.get(include=["documents", "metadatas"])
+    child_texts = results.get("documents", [])
+    child_metas = results.get("metadatas", [])
+    if not child_texts:
         raise ValueError("Chroma store is empty. Ingest documents first (via the UI or API).")
 
-    if len(docs) > MAX_GOLDENS:
-        stride = len(docs) / MAX_GOLDENS
-        docs = [docs[int(i * stride)] for i in range(MAX_GOLDENS)]
+    source_ids = list({(m or {}).get("source_id") for m in child_metas if m and m.get("source_id")})
+    parents = store.get_parents(source_ids)
+
+    contexts = []
+    for text, meta in zip(child_texts, child_metas):
+        sid = (meta or {}).get("source_id")
+        parent = parents.get(sid)
+        if parent:
+            contexts.append([text, parent.page_content])
+        else:
+            contexts.append([text])
+
+    if len(contexts) > MAX_GOLDENS:
+        stride = len(contexts) / MAX_GOLDENS
+        contexts = [contexts[int(i * stride)] for i in range(MAX_GOLDENS)]
 
     if progress_callback:
-        progress_callback({"stage": "synthesizing", "message": f"Synthesizing up to {len(docs)} goldens (this may take a few minutes)…"})
+        progress_callback({"stage": "synthesizing", "message": f"Synthesizing up to {len(contexts)} goldens (this may take a few minutes)…"})
 
     from deepeval.synthesizer import Synthesizer
     from deepeval.synthesizer.config import EvolutionConfig, FiltrationConfig
@@ -668,7 +680,7 @@ def generate_goldens_streaming(
         ),
     )
     goldens_list = synthesizer.generate_goldens_from_contexts(
-        contexts=[[d] for d in docs],
+        contexts=contexts,
         max_goldens_per_context=1,
     )
 
