@@ -230,6 +230,13 @@ def generate_node_factory(llm: ChatOpenAI):
                 "user's question. If the context does not contain enough information, say so. "
                 "Use markdown formatting only. Do not use HTML tags. For line breaks, "
                 "end the line with two spaces or use a blank line between paragraphs.\n\n"
+                "Follow these rules strictly:\n"
+                "- Answer the parts the context supports first. Only state what is missing "
+                "for the remainder, and only if it is genuinely absent.\n"
+                "- Answer exactly what was asked. Omit adjacent facts (other projects, "
+                "certifications, or purposes) that were not requested.\n"
+                "- Copy names, dates, and statuses verbatim as written in the context; do "
+                "not infer, correct, or alter them.\n\n"
                 f"Context:\n{context}"
             )),
             *state["messages"],

@@ -10,7 +10,7 @@ def get_generation_llm(
     model: str,
     api_key: str,
     temperature: float = 0.7,
-    max_tokens: Optional[int] = 1024,
+    max_tokens: Optional[int] = 4096,
 ) -> ChatOpenAI:
     if not base_url or not model:
         raise ValueError("base_url and model are required")

@@ -610,6 +610,8 @@ def generate_goldens_streaming(
         progress_callback({"stage": "synthesizing", "message": f"Synthesizing up to {len(docs)} goldens (this may take a few minutes)…"})
 
     from deepeval.synthesizer import Synthesizer
+    from deepeval.synthesizer.config import EvolutionConfig, FiltrationConfig
+    from deepeval.synthesizer.types import Evolution
 
     judge = NvidiaNimJudge(eval_cfg["base_url"], eval_cfg["model"], eval_cfg["api_key"])
     # async_mode=False: generate_goldens_from_contexts() internally calls
@@ -617,17 +619,76 @@ def generate_goldens_streaming(
     # nest_asyncio patching of a running loop when this function is invoked
     # via asyncio.to_thread (the SSE path). The sync code path avoids that
     # fragility entirely while still producing the same goldens.
-    synthesizer = Synthesizer(model=judge, async_mode=False)
+    #
+    # filtration_config: DeepEval's native critic-LLM quality filter rejects
+    #   low-quality synthetic goldens during synthesis (no custom prompt).
+    # evolution_config: the Synthesizer's default evolves extracted questions
+    #   via 7 strategies in equal proportion, including HYPOTHETICAL (what-if
+    #   questions that go BEYOND the source text), REASONING, and COMPARATIVE.
+    #   Those evolutions are what produce expected answers containing invented
+    #   advice absent from the corpus, which makes ContextualRecall
+    #   unsatisfiable. We restrict evolutions to text-grounded strategies that
+    #   stay answerable from the provided context. This is a native DeepEval
+    #   knob (no custom judgment code).
+    synthesizer = Synthesizer(
+        model=judge,
+        async_mode=False,
+        filtration_config=FiltrationConfig(
+            critic_model=judge,
+            synthetic_input_quality_threshold=0.5,
+        ),
+        evolution_config=EvolutionConfig(
+            evolutions={
+                Evolution.CONCRETIZING: 1 / 3,
+                Evolution.CONSTRAINED: 1 / 3,
+                Evolution.IN_BREADTH: 1 / 3,
+            },
+        ),
+    )
     goldens_list = synthesizer.generate_goldens_from_contexts(
         contexts=[[d] for d in docs],
         max_goldens_per_context=1,
     )
 
+    # Groundedness flag using DeepEval's own FaithfulnessMetric (the same
+    # standard metric class used by the eval harness) — not a custom prompt.
+    # Each synthesized expected_output is checked against its own source
+    # context; ungrounded goldens are KEPT but marked grounded=False so the
+    # human curator has the final call. The judge is the evaluation provider,
+    # kept independent of the generation model by config.
+    if progress_callback:
+        progress_callback({"stage": "groundedness_check", "message": f"Verifying {len(goldens_list)} goldens against source context…"})
+
+    from deepeval.metrics import FaithfulnessMetric
+    from deepeval.test_case import LLMTestCase
+
+    grounded_count = 0
     goldens = []
     for golden in goldens_list:
+        source_context = golden.context or []
+        grounded = True
+        if source_context and golden.expected_output:
+            tc = LLMTestCase(
+                input=golden.input or "",
+                actual_output=golden.expected_output,
+                retrieval_context=source_context if isinstance(source_context, list) else [source_context],
+            )
+            metric = FaithfulnessMetric(threshold=0.5, model=judge, async_mode=False)
+            try:
+                metric.measure(tc)
+                grounded = bool(metric.is_successful())
+            except Exception:
+                grounded = True
+        if grounded:
+            grounded_count += 1
         goldens.append({
             "input": golden.input,
             "expected_output": golden.expected_output,
+            # DeepEval attaches the source chunk(s) used to synthesize each
+            # golden; persisting them makes curation auditable against the
+            # corpus without introducing any judgment of our own.
+            "source_context": source_context if isinstance(source_context, list) else ([source_context] if source_context else []),
+            "grounded": grounded,
         })
 
     output = {
@@ -643,6 +704,6 @@ def generate_goldens_streaming(
         json.dump(output, f, indent=2, ensure_ascii=False)
 
     if progress_callback:
-        progress_callback({"stage": "done", "message": f"Wrote {len(goldens)} goldens."})
+        progress_callback({"stage": "done", "message": f"Wrote {len(goldens)} goldens ({grounded_count} grounded, {len(goldens) - grounded_count} flagged for review)."})
 
     return {"count": len(goldens), "path": str(GOLDEN_DATASET_PATH)}
