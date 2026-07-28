@@ -1,18 +1,27 @@
-"""LangGraph assembly for the Agentic RAG workflow."""
+"""LangGraph assembly for the multi-agent RAG workflow.
+
+Topology:
+    supervisor → researcher ↔ research_tools → supervisor
+    supervisor → writer → quality_check → supervisor (or END)
+
+The supervisor is an LLM that decides which sub-agent to call. The researcher
+is a tool-calling ReAct agent (vector_search, web_fetch, handoff). The writer
+synthesizes a grounded answer. The quality_check critic grades the answer and
+routes feedback back to the supervisor on failure.
+"""
 from langchain_openai import ChatOpenAI, OpenAIEmbeddings
 
 from app.vectorstore.chroma_store import ChromaStore
 
 from .nodes import (
-    fetch_urls_node,
-    generate_node_factory,
-    grade_documents_node_factory,
-    grade_urls_node_factory,
-    propose_urls_node_factory,
     quality_check_node_factory,
-    retrieve_node_factory,
-    route_after_grading,
+    research_tools_node_factory,
+    researcher_node_factory,
     route_after_quality,
+    route_after_researcher,
+    route_after_supervisor,
+    supervisor_node_factory,
+    writer_node_factory,
 )
 from .state import AgentState
 
@@ -28,35 +37,39 @@ def build_agentic_rag_graph(
     embeddings: OpenAIEmbeddings,
     vector_store: ChromaStore,
     retrieval_k: int = 4,
+    web_search_enabled: bool = False,
 ):
     if StateGraph is None:
         raise RuntimeError("langgraph is not installed")
 
     workflow = StateGraph(AgentState)
 
-    workflow.add_node("retrieve", retrieve_node_factory(vector_store, k=retrieval_k))
-    workflow.add_node("grade_documents", grade_documents_node_factory(llm))
-    workflow.add_node("propose_urls", propose_urls_node_factory(llm))
-    workflow.add_node("fetch_urls", fetch_urls_node)
-    workflow.add_node("grade_urls", grade_urls_node_factory(llm))
-    workflow.add_node("generate", generate_node_factory(llm))
+    workflow.add_node("supervisor", supervisor_node_factory(llm))
+    workflow.add_node("researcher", researcher_node_factory(
+        llm,
+        allow_web_fetch=web_search_enabled,
+    ))
+    workflow.add_node("research_tools", research_tools_node_factory(vector_store, llm, k=retrieval_k))
+    workflow.add_node("writer", writer_node_factory(llm))
     workflow.add_node("quality_check", quality_check_node_factory(llm))
 
-    workflow.set_entry_point("retrieve")
-    workflow.add_edge("retrieve", "grade_documents")
+    workflow.set_entry_point("supervisor")
     workflow.add_conditional_edges(
-        "grade_documents",
-        route_after_grading,
-        {"generate": "generate", "propose_urls": "propose_urls"},
+        "supervisor",
+        route_after_supervisor,
+        {"researcher": "researcher", "writer": "writer", "end": END},
     )
-    workflow.add_edge("propose_urls", "fetch_urls")
-    workflow.add_edge("fetch_urls", "grade_urls")
-    workflow.add_edge("grade_urls", "generate")
-    workflow.add_edge("generate", "quality_check")
+    workflow.add_conditional_edges(
+        "researcher",
+        route_after_researcher,
+        {"research_tools": "research_tools", "supervisor": "supervisor"},
+    )
+    workflow.add_edge("research_tools", "researcher")
+    workflow.add_edge("writer", "quality_check")
     workflow.add_conditional_edges(
         "quality_check",
         route_after_quality,
-        {"retrieve": "retrieve", "end": END},
+        {"supervisor": "supervisor", "end": END},
     )
 
     return workflow.compile()

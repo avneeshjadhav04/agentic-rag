@@ -1,4 +1,4 @@
-"""Shared state for the LangGraph agent workflow."""
+"""Shared state for the LangGraph multi-agent RAG workflow."""
 from typing import Annotated, Optional
 
 from langgraph.graph.message import add_messages
@@ -9,12 +9,14 @@ class AgentState(TypedDict):
     question: str
     messages: Annotated[list, add_messages]
     documents: list[dict]
-    web_search_urls: list[str]
     generation: Optional[str]
     trace: list[dict]
     steps: int
     web_search_enabled: bool
     max_loops: int
-    refined_question: Optional[str]
     quality_passed: bool
-    web_fetched_count: int
+    next_agent: Optional[str]
+    pending_tool: Optional[str]
+    pending_args: Optional[dict]
+    tool_call_count: int
+    quality_feedback: Optional[str]

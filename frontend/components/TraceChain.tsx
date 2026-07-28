@@ -15,11 +15,11 @@ interface TraceChainProps {
 }
 
 const STEP_LABELS: Record<string, string> = {
-  retrieve: "Retrieve",
-  grade_documents: "Grade Documents",
-  propose_urls: "Propose URLs",
-  fetch_urls: "Fetch URLs",
-  generate: "Generate",
+  supervisor: "Supervisor",
+  researcher: "Researcher",
+  tool_result: "Tool Result",
+  handoff: "Handoff",
+  writer: "Writer",
   quality_check: "Quality Check",
 };
 

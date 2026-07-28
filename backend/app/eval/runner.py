@@ -133,12 +133,17 @@ def run_graph_for_question(graph, question: str) -> dict:
         "question": question,
         "messages": [],
         "documents": [],
-        "web_search_urls": [],
         "generation": None,
         "trace": [],
         "steps": 0,
         "web_search_enabled": False,
         "max_loops": 3,
+        "quality_passed": False,
+        "next_agent": None,
+        "pending_tool": None,
+        "pending_args": None,
+        "tool_call_count": 0,
+        "quality_feedback": None,
     }
     return graph.invoke(state)
 

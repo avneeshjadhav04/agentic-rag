@@ -24,11 +24,12 @@ def _build_graph(
     embed_model: str,
     embed_api_key: str,
     temperature: float = 0.7,
+    web_search_enabled: bool = False,
 ):
     llm = get_generation_llm(generation_base_url, generation_model, generation_api_key, temperature=temperature)
     embeddings = get_embeddings(embed_base_url, embed_model, embed_api_key)
     vector_store = ChromaStore(embeddings=embeddings)
-    return build_agentic_rag_graph(llm, embeddings, vector_store)
+    return build_agentic_rag_graph(llm, embeddings, vector_store, web_search_enabled=web_search_enabled)
 
 
 @router.post("/stream")
@@ -53,6 +54,7 @@ async def chat_stream(
                 generation_base_url, generation_model, generation_api_key,
                 embed_base_url, embed_model, embed_api_key,
                 temperature=temperature,
+                web_search_enabled=web_search_enabled,
             )
             from app.agents.nodes import set_trace_buffer, clear_trace_buffer
 
@@ -70,12 +72,17 @@ async def chat_stream(
                 "question": question,
                 "messages": base_messages,
                 "documents": [],
-                "web_search_urls": [],
                 "generation": None,
                 "trace": [],
                 "steps": 0,
                 "web_search_enabled": web_search_enabled,
                 "max_loops": 3,
+                "quality_passed": False,
+                "next_agent": None,
+                "pending_tool": None,
+                "pending_args": None,
+                "tool_call_count": 0,
+                "quality_feedback": None,
             }
 
             def run_graph():

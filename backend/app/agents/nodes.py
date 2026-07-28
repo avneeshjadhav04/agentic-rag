@@ -1,19 +1,31 @@
-"""LangGraph agent nodes for the Agentic RAG workflow."""
+"""LangGraph nodes for the multi-agent RAG workflow.
+
+Architecture: supervisor → researcher ↔ research_tools → writer → quality_check
+The supervisor is an LLM that decides which sub-agent to call next. The
+researcher is a tool-calling ReAct agent (vector_search, web_fetch, handoff).
+The writer synthesizes a grounded answer from gathered context. The
+quality_check critic grades the answer and routes feedback back to the
+supervisor on failure.
+"""
 import json
 import re
 import threading
-import uuid
-from collections import Counter, defaultdict
+from collections import Counter
 from typing import Optional
 
-from langchain_core.documents import Document
-from langchain_core.messages import HumanMessage, SystemMessage
-from langchain_openai import ChatOpenAI, OpenAIEmbeddings
+from langchain_core.messages import AIMessage, HumanMessage, SystemMessage, ToolMessage
+from langchain_openai import ChatOpenAI
 
-from app.search.webfetch import fetch_url
-from app.vectorstore.chroma_store import ChromaStore, PARENT_CHAR_CAP, WINDOW_RADIUS
+from app.vectorstore.chroma_store import ChromaStore
 
 from .state import AgentState
+from .tools import (
+    VECTOR_SEARCH_DESC,
+    WEB_FETCH_DESC,
+    HANDOFF_DESC,
+    vector_search as _vector_search,
+    web_fetch as _web_fetch,
+)
 
 _trace_buffers: dict[int, list[dict]] = {}
 _trace_buffers_lock = threading.Lock()
@@ -42,7 +54,6 @@ def _llm_json_invoke(llm: ChatOpenAI, prompt: str, fallback: dict) -> dict:
     try:
         response = llm.invoke(prompt)
         text = response.content if hasattr(response, "content") else str(response)
-        # Extract JSON if wrapped in markdown fences.
         match = re.search(r"```json\s*(.*?)\s*```", text, re.DOTALL)
         if match:
             text = match.group(1)
@@ -51,215 +62,256 @@ def _llm_json_invoke(llm: ChatOpenAI, prompt: str, fallback: dict) -> dict:
         return fallback
 
 
-def _build_window(children: list, target_start: int, radius: int = 2) -> str:
-    """Join a window of neighboring child chunks around ``target_start``.
+# ---------------------------------------------------------------------------
+# Supervisor — main agent that decides which sub-agent to call next
+# ---------------------------------------------------------------------------
 
-    Used by the retrieve node as a safety-cap fallback when a parent doc
-    exceeds ``PARENT_CHAR_CAP``. ``children`` must be sorted by
-    ``start_index`` ascending.
-    """
-    if not children:
-        return ""
-    target_idx = 0
-    for i, d in enumerate(children):
-        if d.metadata.get("start_index", 0) == target_start:
-            target_idx = i
-            break
-    lo = max(0, target_idx - radius)
-    hi = min(len(children), target_idx + radius + 1)
-    return "\n".join(d.page_content for d in children[lo:hi])
-
-
-def retrieve_node_factory(vector_store: ChromaStore, k: int = 4):
-    def retrieve(state: AgentState) -> AgentState:
-        question = state.get("refined_question") or state["question"]
-        child_docs = vector_store.similarity_search(question, k=k)
-        parents = vector_store.get_parents(
-            list({d.metadata.get("source_id") for d in child_docs if d.metadata.get("source_id")})
-        )
-        expanded: list[dict] = []
-        seen_parent_ids: set[str] = set()
-        for doc in child_docs:
-            sid = doc.metadata.get("source_id")
-            parent = parents.get(sid) if sid else None
-            if parent and len(parent.page_content) <= PARENT_CHAR_CAP:
-                if sid in seen_parent_ids:
-                    continue
-                expanded.append({"content": parent.page_content, "metadata": parent.metadata})
-                seen_parent_ids.add(sid)
-            else:
-                # Backward-compat / safety-cap fallback: either no parents.json
-                # (old store) or the parent exceeds the char cap. Use the child
-                # chunk itself, or a window of its neighbors when parents exist
-                # but are too large.
-                if parent is None:
-                    expanded.append({"content": doc.page_content, "metadata": doc.metadata})
-                else:
-                    children = vector_store.get_children_by_source(sid)
-                    window = _build_window(children, doc.metadata.get("start_index", 0), WINDOW_RADIUS)
-                    expanded.append({"content": window or doc.page_content, "metadata": doc.metadata})
-        state["documents"] = expanded
-        source_counts = Counter(
-            (doc.get("metadata", {}).get("source_id", "unknown"), doc.get("metadata", {}).get("source", "unknown"))
-            for doc in expanded
-        )
-        sources_summary = [
-            {"source_id": sid, "source_name": name, "chunks": count}
-            for (sid, name), count in source_counts.items()
-        ]
-        _add_trace(
-            state,
-            "retrieve",
-            {"question": question, "count": len(expanded), "sources": sources_summary},
-        )
-        return state
-
-    return retrieve
-
-
-def grade_documents_node_factory(llm: ChatOpenAI):
-    def grade_documents(state: AgentState) -> AgentState:
+def supervisor_node_factory(llm: ChatOpenAI):
+    def supervisor(state: AgentState) -> AgentState:
         question = state["question"]
-        doc_sources = [
-            (doc.get("metadata", {}).get("source_id", "unknown"), doc.get("metadata", {}).get("source", "unknown"))
-            for doc in state["documents"]
-        ]
-        graded: list[tuple[dict, int]] = []
-        grades = []
-        for i, doc in enumerate(state["documents"]):
-            content = doc["content"]
-            prompt = (
-                "You are a relevance grader. Given a user question and a document, "
-                "respond with JSON: "
-                "{\"relevant\": true/false, \"score\": <0-10>, \"reason\": \"...\"}\n\n"
-                f"Question: {question}\n\n"
-                f"Document:\n{content}\n\n"
-                "JSON:"
-            )
-            result = _llm_json_invoke(llm, prompt, {"relevant": True, "score": 5})
-            is_relevant = bool(result.get("relevant"))
-            score = int(result.get("score", 5))
-            grades.append({"index": i, "relevant": is_relevant, "score": score, "reason": result.get("reason", "")})
-            if is_relevant:
-                graded.append((doc, score))
-        graded.sort(key=lambda x: x[1], reverse=True)
-        state["documents"] = [d for d, _ in graded]
-        grouped: dict[str, list[dict]] = defaultdict(list)
-        for g in grades:
-            sid, name = doc_sources[g["index"]]
-            grouped[sid].append({**g, "source_id": sid, "source_name": name})
-        grades_by_source = [
-            {"source_id": sid, "source_name": chunks[0]["source_name"], "chunks": chunks}
-            for sid, chunks in grouped.items()
-        ]
-        _add_trace(state, "grade_documents", {"grades_by_source": grades_by_source, "relevant_count": len(graded)})
-        return state
+        has_docs = bool(state["documents"])
+        has_generation = bool(state.get("generation"))
+        feedback = state.get("quality_feedback", "")
+        steps = state.get("steps", 0)
 
-    return grade_documents
+        status_parts = []
+        if has_docs:
+            doc_sources = [
+                doc.get("metadata", {}).get("source", "unknown")
+                for doc in state["documents"]
+            ]
+            status_parts.append(f"Documents gathered: {len(state['documents'])} from {doc_sources}")
+        else:
+            status_parts.append("No documents gathered yet.")
+        if has_generation:
+            status_parts.append("An answer has been generated but failed quality check.")
+        if feedback:
+            status_parts.append(f"Quality check feedback: {feedback}")
+        status = "\n".join(status_parts)
 
-
-def route_after_grading(state: AgentState) -> str:
-    if state["documents"]:
-        return "generate"
-    if state["web_search_enabled"]:
-        return "propose_urls"
-    return "generate"
-
-
-def propose_urls_node_factory(llm: ChatOpenAI):
-    def propose_urls(state: AgentState) -> AgentState:
-        question = state["question"]
         prompt = (
-            "You are a research assistant. The user asked a question and no relevant "
-            "documents were found. Propose up to 3 authoritative URLs that likely contain "
-            "the answer. Respond with JSON: {\"urls\": [\"...\"]}\n\n"
-            f"Question: {question}\n\n"
+            "You are the supervisor of a multi-agent RAG system. You decide which "
+            "sub-agent should act next based on the current state.\n\n"
+            "Available agents:\n"
+            "- researcher: Searches the local knowledge base and fetches web pages "
+            "to gather relevant context. Call this when you need more information.\n"
+            "- writer: Synthesizes a grounded answer from gathered context. Call "
+            "this when sufficient documents have been gathered.\n"
+            "- finish: The task is complete (answer passed quality check or max "
+            "attempts reached). Call this to end.\n\n"
+            f"Current status:\n{status}\n\n"
+            f"User question: {question}\n\n"
+            f"Quality check attempts so far: {steps}\n\n"
+            "Respond with JSON: "
+            '{"next": "researcher" | "writer" | "finish", "reason": "..."}\n\n'
+            "Guidelines:\n"
+            "- If no documents have been gathered yet, call researcher.\n"
+            "- If documents have been gathered and no answer exists, call writer.\n"
+            "- If the answer failed quality check due to missing information, call "
+            "researcher to find better context.\n"
+            "- If the answer failed quality check due to poor synthesis (not missing "
+            "info), call writer to rewrite.\n"
+            "- If max attempts are reached, call finish.\n"
             "JSON:"
         )
-        result = _llm_json_invoke(llm, prompt, {"urls": []})
-        urls = [u for u in result.get("urls", []) if isinstance(u, str)]
-        urls = urls[:3]
-        state["web_search_urls"] = urls
-        _add_trace(state, "propose_urls", {"proposed_urls": urls})
+        result = _llm_json_invoke(llm, prompt, {"next": "researcher", "reason": ""})
+        next_agent = result.get("next", "researcher")
+        if next_agent not in ("researcher", "writer", "finish"):
+            next_agent = "researcher" if not has_docs else "writer"
+        reason = result.get("reason", "")
+        state["next_agent"] = next_agent
+        _add_trace(state, "supervisor", {"next": next_agent, "reason": reason})
         return state
 
-    return propose_urls
+    return supervisor
 
 
-def fetch_urls_node(state: AgentState) -> AgentState:
-    fetched: list[dict] = []
-    urls = state.get("web_search_urls", [])
-    for url in urls:
-        text = fetch_url(url)
-        if text:
-            fetched.append({"content": text, "metadata": {"source": url, "source_id": str(uuid.uuid4())}})
-    if fetched:
-        state["documents"].extend(fetched)
-    state["web_fetched_count"] = len(fetched)
-    _add_trace(
-        state,
-        "fetch_urls",
-        {"urls": urls, "successful_fetches": len(fetched)},
-    )
-    return state
+def route_after_supervisor(state: AgentState) -> str:
+    next_agent = state.get("next_agent", "researcher")
+    if next_agent == "finish":
+        return "end"
+    return next_agent
 
 
-def grade_urls_node_factory(llm: ChatOpenAI):
-    def grade_urls(state: AgentState) -> AgentState:
+# ---------------------------------------------------------------------------
+# Researcher — tool-calling ReAct agent for information gathering
+# ---------------------------------------------------------------------------
+
+_MAX_TOOL_CALLS = 8
+
+
+def researcher_node_factory(llm: ChatOpenAI, allow_web_fetch: bool, max_tool_calls: int = _MAX_TOOL_CALLS):
+    def researcher(state: AgentState) -> AgentState:
         question = state["question"]
-        docs = state["documents"]
-        web_count = state.get("web_fetched_count", 0)
-        if web_count == 0:
-            _add_trace(state, "grade_urls", {"grades_by_source": [], "relevant_count": 0})
-            return state
-        web_docs = docs[-web_count:]
-        doc_sources = [
-            (doc.get("metadata", {}).get("source_id", "unknown"), doc.get("metadata", {}).get("source", "unknown"))
-            for doc in web_docs
-        ]
-        graded: list[tuple[dict, int]] = []
-        grades = []
-        for i, doc in enumerate(web_docs):
-            content = doc["content"]
-            prompt = (
-                "You are a relevance grader. Given a user question and a document chunk, "
-                "respond with JSON: "
-                "{\"relevant\": true/false, \"score\": <0-10>, \"reason\": \"...\"}\n\n"
-                f"Question: {question}\n\n"
-                f"Document chunk:\n{content}\n\n"
-                "JSON:"
+        tool_call_count = state.get("tool_call_count", 0)
+        feedback = state.get("quality_feedback", "")
+
+        tool_descriptions = [VECTOR_SEARCH_DESC, HANDOFF_DESC]
+        if allow_web_fetch:
+            tool_descriptions.append(WEB_FETCH_DESC)
+        tools_text = "\n\n".join(tool_descriptions)
+
+        feedback_text = ""
+        if feedback and tool_call_count == 0:
+            feedback_text = (
+                f"\n\nNote: A previous attempt failed quality check with this "
+                f"feedback: {feedback}\nPlease research more thoroughly to address "
+                f"these issues."
             )
-            result = _llm_json_invoke(llm, prompt, {"relevant": True, "score": 5})
-            is_relevant = bool(result.get("relevant"))
-            score = int(result.get("score", 5))
-            grades.append({"index": i, "relevant": is_relevant, "score": score, "reason": result.get("reason", "")})
-            if is_relevant:
-                graded.append((doc, score))
-        graded.sort(key=lambda x: x[1], reverse=True)
-        relevant_docs = [d for d, _ in graded]
-        state["documents"] = docs[:-web_count] + relevant_docs
-        grouped: dict[str, list[dict]] = defaultdict(list)
-        for g in grades:
-            sid, name = doc_sources[g["index"]]
-            grouped[sid].append({**g, "source_id": sid, "source_name": name})
-        grades_by_source = [
-            {"source_id": sid, "source_name": chunks[0]["source_name"], "chunks": chunks}
-            for sid, chunks in grouped.items()
+
+        system_content = (
+            "You are a research agent in a multi-agent RAG system. Your job is to "
+            "gather relevant information to answer the user's question.\n\n"
+            f"Available tools:\n\n{tools_text}\n\n"
+            "Respond with JSON to choose your next action:\n"
+            '  {"tool": "<tool_name>", "args": {...}, "thought": "brief reasoning"}\n\n'
+            "Rules:\n"
+            "- Always start by searching the local knowledge base with vector_search.\n"
+            "- If the local results are insufficient, you may call web_fetch with a "
+            "specific URL you are confident contains the answer.\n"
+            "- You can call vector_search multiple times with different query phrasings "
+            "to find different aspects of the question.\n"
+            "- When you have gathered enough context, call handoff to pass control back "
+            "to the supervisor.\n"
+            "- If the local knowledge base is empty or has no relevant results after "
+            "reasonable effort, call handoff so the writer can state that information "
+            "is unavailable."
+            f"{feedback_text}"
+        )
+
+        messages = [
+            SystemMessage(content=system_content),
+            *state["messages"],
+            HumanMessage(content=question),
         ]
-        _add_trace(state, "grade_urls", {"grades_by_source": grades_by_source, "relevant_count": len(graded)})
+
+        force_handoff = tool_call_count >= max_tool_calls
+        if force_handoff:
+            messages.append(HumanMessage(content=(
+                f"You have reached the maximum of {max_tool_calls} tool calls. "
+                "You must now call handoff to pass control to the supervisor."
+            )))
+
+        response = llm.invoke(messages)
+        text = response.content if hasattr(response, "content") else str(response)
+
+        match = re.search(r"```json\s*(.*?)\s*```", text, re.DOTALL)
+        if match:
+            text = match.group(1)
+
+        try:
+            result = json.loads(text.strip())
+            tool = result.get("tool", "handoff")
+            args = result.get("args", {}) or {}
+            thought = result.get("thought", "")
+        except (json.JSONDecodeError, AttributeError):
+            tool = "handoff"
+            args = {}
+            thought = "Unable to parse response — handing off to supervisor."
+
+        if force_handoff and tool != "handoff":
+            tool = "handoff"
+            args = {}
+            thought = f"Reached max tool calls ({max_tool_calls}) — forcing handoff."
+
+        if tool not in ("vector_search", "web_fetch", "handoff"):
+            tool = "handoff"
+        if tool == "web_fetch" and not allow_web_fetch:
+            tool = "handoff"
+            thought = "Web fetch is disabled — handing off to supervisor."
+
+        state["pending_tool"] = tool
+        state["pending_args"] = args
+        _add_trace(state, "researcher", {
+            "thought": thought,
+            "tool": tool,
+            "args": args,
+            "tool_call_count": tool_call_count,
+        })
         return state
 
-    return grade_urls
+    return researcher
 
 
-def generate_node_factory(llm: ChatOpenAI):
-    def generate(state: AgentState) -> AgentState:
+def route_after_researcher(state: AgentState) -> str:
+    pending = state.get("pending_tool")
+    if pending in ("vector_search", "web_fetch"):
+        return "research_tools"
+    return "supervisor"
+
+
+# ---------------------------------------------------------------------------
+# Research tools — executes the pending tool call from the researcher
+# ---------------------------------------------------------------------------
+
+def research_tools_node_factory(vector_store: ChromaStore, llm: ChatOpenAI, k: int = 4):
+    def research_tools(state: AgentState) -> AgentState:
+        tool = state.get("pending_tool")
+        args = state.get("pending_args", {}) or {}
+        question = state["question"]
+
+        if tool == "vector_search":
+            query = args.get("query", question)
+            result_text, docs = _vector_search(vector_store, k, query)
+            if docs:
+                state["documents"].extend(docs)
+            state["messages"] = state.get("messages", []) + [
+                AIMessage(content=f'[vector_search query="{query}"]'),
+                ToolMessage(content=result_text, tool_call_id=f"vs_{state.get('tool_call_count', 0)}"),
+            ]
+            source_counts = Counter(
+                (doc.get("metadata", {}).get("source_id", "unknown"),
+                 doc.get("metadata", {}).get("source", "unknown"))
+                for doc in docs
+            )
+            sources_summary = [
+                {"source_id": sid, "source_name": name, "chunks": count}
+                for (sid, name), count in source_counts.items()
+            ]
+            _add_trace(state, "tool_result", {
+                "tool": "vector_search",
+                "query": query,
+                "new_docs": len(docs),
+                "total_docs": len(state["documents"]),
+                "sources": sources_summary,
+            })
+
+        elif tool == "web_fetch":
+            url = args.get("url", "")
+            result_text, docs = _web_fetch(url, question, llm)
+            if docs:
+                state["documents"].extend(docs)
+            state["messages"] = state.get("messages", []) + [
+                AIMessage(content=f'[web_fetch url="{url}"]'),
+                ToolMessage(content=result_text, tool_call_id=f"wf_{state.get('tool_call_count', 0)}"),
+            ]
+            _add_trace(state, "tool_result", {
+                "tool": "web_fetch",
+                "url": url,
+                "new_docs": len(docs),
+                "total_docs": len(state["documents"]),
+            })
+
+        state["tool_call_count"] = state.get("tool_call_count", 0) + 1
+        state["pending_tool"] = None
+        state["pending_args"] = None
+        return state
+
+    return research_tools
+
+
+# ---------------------------------------------------------------------------
+# Writer — generation agent that synthesizes a grounded answer
+# ---------------------------------------------------------------------------
+
+def writer_node_factory(llm: ChatOpenAI):
+    def writer(state: AgentState) -> AgentState:
         question = state["question"]
         docs = state["documents"]
         if docs:
             context_parts = []
             for i, doc in enumerate(docs):
-                source = doc.get("metadata", {}).get("source", f"doc {i+1}")
+                source = doc.get("metadata", {}).get("source", f"doc {i + 1}")
                 context_parts.append(f"Source: {source}\n{doc['content']}")
             context = "\n\n---\n\n".join(context_parts)
         else:
@@ -287,18 +339,27 @@ def generate_node_factory(llm: ChatOpenAI):
         generation = re.sub(r"<br\s*/?>", "\n\n", generation, flags=re.IGNORECASE)
         state["generation"] = generation
         source_counts = Counter(
-            (doc.get("metadata", {}).get("source_id", "unknown"), doc.get("metadata", {}).get("source", "unknown"))
+            (doc.get("metadata", {}).get("source_id", "unknown"),
+             doc.get("metadata", {}).get("source", "unknown"))
             for doc in docs
         )
         sources_used = [
             {"source_id": sid, "source_name": name, "chunks": count}
             for (sid, name), count in source_counts.items()
         ]
-        _add_trace(state, "generate", {"has_context": bool(docs), "length": len(generation), "sources_used": sources_used})
+        _add_trace(state, "writer", {
+            "has_context": bool(docs),
+            "length": len(generation),
+            "sources_used": sources_used,
+        })
         return state
 
-    return generate
+    return writer
 
+
+# ---------------------------------------------------------------------------
+# Quality check — critic that grades the writer's answer
+# ---------------------------------------------------------------------------
 
 def quality_check_node_factory(llm: ChatOpenAI):
     def quality_check(state: AgentState) -> AgentState:
@@ -306,6 +367,7 @@ def quality_check_node_factory(llm: ChatOpenAI):
         if not docs:
             state["steps"] += 1
             state["quality_passed"] = True
+            state["quality_feedback"] = None
             _add_trace(
                 state,
                 "quality_check",
@@ -319,7 +381,6 @@ def quality_check_node_factory(llm: ChatOpenAI):
             return state
         question = state["question"]
         generation = state.get("generation", "")
-        docs = state["documents"]
         context = "\n\n---\n\n".join(d["content"] for d in docs) if docs else ""
         prompt = (
             "You are a quality checker. Given a question, an answer, and supporting context, "
@@ -336,11 +397,9 @@ def quality_check_node_factory(llm: ChatOpenAI):
         state["steps"] += 1
         state["quality_passed"] = grounded and answers_question
         if not state["quality_passed"] and state["steps"] < state.get("max_loops", 3):
-            state["refined_question"] = (
-                f"The previous answer had issues: {feedback}\n\n"
-                f"Original question: {question}\n\n"
-                f"Please search again with this refined understanding."
-            )
+            state["quality_feedback"] = feedback
+        else:
+            state["quality_feedback"] = None
         _add_trace(
             state,
             "quality_check",
@@ -361,4 +420,4 @@ def route_after_quality(state: AgentState) -> str:
         return "end"
     if state["steps"] >= state.get("max_loops", 3):
         return "end"
-    return "retrieve"
+    return "supervisor"
