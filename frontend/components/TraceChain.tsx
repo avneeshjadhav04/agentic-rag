@@ -294,11 +294,19 @@ function TraceTreeNode({
 // ---------------------------------------------------------------------------
 
 export default function TraceChain({ trace, live }: TraceChainProps) {
+  const [copiedFull, setCopiedFull] = useState(false);
+
   if (!trace || trace.length === 0) return null;
 
   const tree = buildTree(trace);
   const lastNode = findLastNode(tree);
   const runningPath = live && lastNode ? findPathToNode(tree, lastNode) ?? [] : [];
+
+  const copyFullTrace = () => {
+    navigator.clipboard.writeText(JSON.stringify(trace, null, 2));
+    setCopiedFull(true);
+    setTimeout(() => setCopiedFull(false), 2000);
+  };
 
   return (
     <div className="w-full max-w-full md:max-w-[680px] mb-5 border border-line">
@@ -309,6 +317,22 @@ export default function TraceChain({ trace, live }: TraceChainProps) {
           runningPath={runningPath}
         />
       ))}
+      <div className="flex justify-start px-4 py-3 border-t border-line">
+        <button
+          onClick={copyFullTrace}
+          className="flex items-center gap-1 font-mono text-[10px] uppercase tracking-widest text-muted hover:text-text transition"
+        >
+          {copiedFull ? (
+            <>
+              <Check className="w-3 h-3" /> Copied
+            </>
+          ) : (
+            <>
+              <Copy className="w-3 h-3" /> Copy Full Trace
+            </>
+          )}
+        </button>
+      </div>
     </div>
   );
 }

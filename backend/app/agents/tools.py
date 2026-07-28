@@ -102,7 +102,7 @@ def _grade_doc(llm: ChatOpenAI, question: str, content: str) -> tuple[bool, int,
 
     prompt = (
         "You are a relevance grader. Given a user question and a document, "
-        "respond with JSON: "
+        "Respond with ONLY a JSON object — no text before or after: "
         '{"relevant": true/false, "score": <0-10>, "reason": "..."}\n\n'
         f"Question: {question}\n\n"
         f"Document:\n{content}\n\n"
@@ -114,6 +114,10 @@ def _grade_doc(llm: ChatOpenAI, question: str, content: str) -> tuple[bool, int,
         match = re.search(r"```json\s*(.*?)\s*```", text, re.DOTALL)
         if match:
             text = match.group(1)
+        else:
+            obj_match = re.search(r"\{.*\}", text, re.DOTALL)
+            if obj_match:
+                text = obj_match.group(0)
         result = json.loads(text.strip())
         return bool(result.get("relevant")), int(result.get("score", 5)), result.get("reason", "")
     except Exception:

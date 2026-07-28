@@ -57,6 +57,10 @@ def _llm_json_invoke(llm: ChatOpenAI, prompt: str, fallback: dict) -> dict:
         match = re.search(r"```json\s*(.*?)\s*```", text, re.DOTALL)
         if match:
             text = match.group(1)
+        else:
+            obj_match = re.search(r"\{.*\}", text, re.DOTALL)
+            if obj_match:
+                text = obj_match.group(0)
         return json.loads(text.strip())
     except Exception:
         return fallback
@@ -102,7 +106,7 @@ def supervisor_node_factory(llm: ChatOpenAI):
             f"Current status:\n{status}\n\n"
             f"User question: {question}\n\n"
             f"Quality check attempts so far: {steps}\n\n"
-            "Respond with JSON: "
+            "Respond with ONLY a JSON object — no text before or after: "
             '{"next": "researcher" | "writer" | "finish", "reason": "..."}\n\n'
             "Guidelines:\n"
             "- If no documents have been gathered yet, call researcher.\n"
@@ -163,7 +167,7 @@ def researcher_node_factory(llm: ChatOpenAI, allow_web_fetch: bool, max_tool_cal
             "You are a research agent in a multi-agent RAG system. Your job is to "
             "gather relevant information to answer the user's question.\n\n"
             f"Available tools:\n\n{tools_text}\n\n"
-            "Respond with JSON to choose your next action:\n"
+            "Respond with ONLY a JSON object — no text before or after:\n"
             '  {"tool": "<tool_name>", "args": {...}, "thought": "brief reasoning"}\n\n'
             "Rules:\n"
             "- Always start by searching the local knowledge base with vector_search.\n"
@@ -198,6 +202,10 @@ def researcher_node_factory(llm: ChatOpenAI, allow_web_fetch: bool, max_tool_cal
         match = re.search(r"```json\s*(.*?)\s*```", text, re.DOTALL)
         if match:
             text = match.group(1)
+        else:
+            obj_match = re.search(r"\{.*\}", text, re.DOTALL)
+            if obj_match:
+                text = obj_match.group(0)
 
         try:
             result = json.loads(text.strip())
@@ -384,7 +392,8 @@ def quality_check_node_factory(llm: ChatOpenAI):
         context = "\n\n---\n\n".join(d["content"] for d in docs) if docs else ""
         prompt = (
             "You are a quality checker. Given a question, an answer, and supporting context, "
-            "respond with JSON: {\"grounded\": true/false, \"answers_question\": true/false, \"feedback\": \"...\"}\n\n"
+            "Respond with ONLY a JSON object — no text before or after: "
+            "{\"grounded\": true/false, \"answers_question\": true/false, \"feedback\": \"...\"}\n\n"
             f"Question: {question}\n\n"
             f"Answer: {generation}\n\n"
             f"Context:\n{context}\n\n"
@@ -398,6 +407,7 @@ def quality_check_node_factory(llm: ChatOpenAI):
         state["quality_passed"] = grounded and answers_question
         if not state["quality_passed"] and state["steps"] < state.get("max_loops", 3):
             state["quality_feedback"] = feedback
+            state["tool_call_count"] = 0
         else:
             state["quality_feedback"] = None
         _add_trace(
