@@ -199,13 +199,24 @@ def get_golden_providers() -> dict:
 
 
 def list_goldens() -> List[dict]:
-    """Return [{index, input, expected_output}] for each golden on disk, or [] if none."""
+    """Return [{index, input, expected_output, grounded, source_context}] for
+    each golden on disk, or [] if none.
+
+    grounded defaults to True and source_context to [] for datasets generated
+    before those fields existed, keeping the shape backward-compatible.
+    """
     data = _read_golden_file()
     if data is None:
         return []
     goldens = _extract_goldens(data)
     return [
-        {"index": i, "input": g.get("input", ""), "expected_output": g.get("expected_output", "")}
+        {
+            "index": i,
+            "input": g.get("input", ""),
+            "expected_output": g.get("expected_output", ""),
+            "grounded": g.get("grounded", True),
+            "source_context": g.get("source_context", []),
+        }
         for i, g in enumerate(goldens)
     ]
 
@@ -650,17 +661,20 @@ def generate_goldens_streaming(
         max_goldens_per_context=1,
     )
 
-    # Groundedness flag using DeepEval's own FaithfulnessMetric (the same
-    # standard metric class used by the eval harness) — not a custom prompt.
-    # Each synthesized expected_output is checked against its own source
-    # context; ungrounded goldens are KEPT but marked grounded=False so the
-    # human curator has the final call. The judge is the evaluation provider,
-    # kept independent of the generation model by config.
+    # Groundedness flag using DeepEval's own GEval (criteria-based metric,
+    # not a custom prompt). Each synthesized expected_output is checked against
+    # its own source context; ungrounded goldens are KEPT but marked
+    # grounded=False so the human curator has the final call. The judge is the
+    # evaluation provider, kept independent of the generation model by config.
+    # GEval is used rather than FaithfulnessMetric because the invention
+    # failure mode is "claims added beyond context" (e.g. a correct Rust-vs-C++
+    # table drawn from training knowledge), not "claims contradicting context" —
+    # FaithfulnessMetric misses the former, GEval's criteria catch it.
     if progress_callback:
         progress_callback({"stage": "groundedness_check", "message": f"Verifying {len(goldens_list)} goldens against source context…"})
 
-    from deepeval.metrics import FaithfulnessMetric
-    from deepeval.test_case import LLMTestCase
+    from deepeval.metrics import GEval
+    from deepeval.test_case import LLMTestCase, SingleTurnParams
 
     grounded_count = 0
     goldens = []
@@ -673,7 +687,20 @@ def generate_goldens_streaming(
                 actual_output=golden.expected_output,
                 retrieval_context=source_context if isinstance(source_context, list) else [source_context],
             )
-            metric = FaithfulnessMetric(threshold=0.5, model=judge, async_mode=False)
+            # GEval with a custom criterion is the right detector here: unlike
+            # FaithfulnessMetric (which only flags *contradictions* with context
+            # and so lets invented-but-factually-correct content slip through),
+            # this flags any claim in the expected output that is not directly
+            # supported by the source context — i.e. additions / outside
+            # knowledge, which is exactly the unsatisfiable-golden failure mode.
+            metric = GEval(
+                name="Groundedness",
+                criteria="Is every claim in the actual output directly supported by the retrieval context? Penalize any information that requires outside knowledge or is not explicitly stated in the context.",
+                evaluation_params=[SingleTurnParams.ACTUAL_OUTPUT, SingleTurnParams.RETRIEVAL_CONTEXT],
+                threshold=0.5,
+                model=judge,
+                async_mode=False,
+            )
             try:
                 metric.measure(tc)
                 grounded = bool(metric.is_successful())
