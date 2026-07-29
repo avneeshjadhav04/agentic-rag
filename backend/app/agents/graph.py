@@ -2,11 +2,14 @@
 
 Topology:
     supervisor → researcher ↔ research_tools → supervisor
-    supervisor → writer → quality_check → supervisor (or END)
+    supervisor → writer → supervisor
+    supervisor → quality_check → supervisor (or END)
 
-The supervisor uses with_structured_output for routing. The researcher
-uses bind_tools for native tool-calling (vector_search, web_fetch, handoff).
-The writer synthesizes a grounded answer. The quality_check critic grades
+The supervisor is the sole orchestrator — every sub-agent returns to
+the supervisor, which decides the next step. The supervisor uses
+with_structured_output for routing. The researcher uses bind_tools
+for native tool-calling (vector_search, web_fetch, handoff). The
+writer synthesizes a grounded answer. The quality_check critic grades
 the answer and routes feedback back to the supervisor on failure.
 """
 from langchain_openai import ChatOpenAI, OpenAIEmbeddings
@@ -57,7 +60,7 @@ def build_agentic_rag_graph(
     workflow.add_conditional_edges(
         "supervisor",
         route_after_supervisor,
-        {"researcher": "researcher", "writer": "writer", "end": END},
+        {"researcher": "researcher", "writer": "writer", "quality_check": "quality_check", "end": END},
     )
     workflow.add_conditional_edges(
         "researcher",
@@ -65,7 +68,7 @@ def build_agentic_rag_graph(
         {"research_tools": "research_tools", "supervisor": "supervisor"},
     )
     workflow.add_edge("research_tools", "researcher")
-    workflow.add_edge("writer", "quality_check")
+    workflow.add_edge("writer", "supervisor")
     workflow.add_conditional_edges(
         "quality_check",
         route_after_quality,

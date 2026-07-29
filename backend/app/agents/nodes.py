@@ -48,7 +48,7 @@ def _add_trace(state: AgentState, step: str, detail: dict) -> None:
 # ---------------------------------------------------------------------------
 
 class RouteDecision(BaseModel):
-    next: Literal["researcher", "writer", "finish"] = Field(
+    next: Literal["researcher", "writer", "quality_check", "finish"] = Field(
         description="Which agent to call next"
     )
     reason: str = Field(description="Brief reasoning for the decision")
@@ -88,8 +88,10 @@ def supervisor_node_factory(llm: ChatOpenAI):
         researcher_summary = state.get("researcher_summary", "")
         if researcher_summary:
             status_parts.append(f"Researcher's last action: {researcher_summary}")
-        if has_generation:
-            status_parts.append("An answer has been generated but failed quality check.")
+        if has_generation and steps == 0:
+            status_parts.append("An answer has been generated but not yet quality-checked.")
+        elif has_generation and steps > 0:
+            status_parts.append("An answer has been generated, was quality-checked, and failed.")
         writer_summary = state.get("writer_summary", "")
         if writer_summary and has_generation:
             status_parts.append(f"Writer's last output: {writer_summary}")
@@ -105,6 +107,8 @@ def supervisor_node_factory(llm: ChatOpenAI):
             "to gather relevant context. Call this when you need more information.\n"
             "- writer: Synthesizes a grounded answer from gathered context. Call "
             "this when sufficient documents have been gathered.\n"
+            "- quality_check: Evaluates whether the writer's answer is grounded and "
+            "addresses the question. Call this after the writer has produced an answer.\n"
             "- finish: The task is complete (answer passed quality check or max "
             "attempts reached). Call this to end.\n\n"
             f"Current status:\n{status}\n\n"
@@ -116,6 +120,8 @@ def supervisor_node_factory(llm: ChatOpenAI):
             "- If the researcher has already run but found no documents, call writer "
             "to state that the information is not available.\n"
             "- If documents have been gathered and no answer exists, call writer.\n"
+            "- If an answer has been generated but not yet quality-checked, call "
+            "quality_check.\n"
             "- If the answer failed quality check due to missing information, call "
             "researcher to find better context.\n"
             "- If the answer failed quality check due to poor synthesis (not missing "
@@ -127,7 +133,15 @@ def supervisor_node_factory(llm: ChatOpenAI):
             next_agent = result.next
             reason = result.reason
         except Exception:
-            next_agent = "writer" if state.get("tool_call_count", 0) > 0 and not has_docs else ("researcher" if not has_docs else "writer")
+            # Fallback: pick a sensible default based on state
+            if has_generation and steps == 0:
+                next_agent = "quality_check"
+            elif has_generation and steps > 0:
+                next_agent = "writer"
+            elif not has_docs and state.get("tool_call_count", 0) > 0:
+                next_agent = "writer"
+            else:
+                next_agent = "researcher" if not has_docs else "writer"
             reason = "Fallback: unable to parse supervisor decision"
 
         state["next_agent"] = next_agent
