@@ -20,4 +20,5 @@ class AgentState(TypedDict):
     pending_args: Optional[dict]
     tool_call_count: int
     tool_call_id: Optional[str]
+    researcher_summary: Optional[str]
     quality_feedback: Optional[str]

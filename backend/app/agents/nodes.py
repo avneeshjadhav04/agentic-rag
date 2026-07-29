@@ -85,6 +85,9 @@ def supervisor_node_factory(llm: ChatOpenAI):
             status_parts.append("No documents gathered yet.")
         if state.get("tool_call_count", 0) > 0 and not has_docs:
             status_parts.append("The researcher has already run but found no relevant documents in the knowledge base.")
+        researcher_summary = state.get("researcher_summary", "")
+        if researcher_summary:
+            status_parts.append(f"Researcher's last action: {researcher_summary}")
         if has_generation:
             status_parts.append("An answer has been generated but failed quality check.")
         if feedback:
@@ -224,6 +227,18 @@ def researcher_node_factory(llm: ChatOpenAI, tools: list, max_tool_calls: int = 
         # research_tools) so the force_handoff cap triggers even when the
         # researcher never calls a tool (e.g. it answers directly).
         state["tool_call_count"] = tool_call_count + 1
+
+        # Build a concise summary for the supervisor — what the researcher
+        # actually did and said, without the full document content.
+        summary_parts = []
+        if response.tool_calls:
+            tc = response.tool_calls[0]
+            summary_parts.append(f"Called {tc['name']} with args {tc['args']}")
+        else:
+            summary_parts.append("No tool called — handed off to supervisor")
+        if thought:
+            summary_parts.append(f"Reasoning: {thought}")
+        state["researcher_summary"] = " | ".join(summary_parts)
 
         state["pending_tool"] = tool
         state["pending_args"] = args
@@ -411,6 +426,7 @@ def quality_check_node_factory(llm: ChatOpenAI):
         if not state["quality_passed"] and state["steps"] < state.get("max_loops", 3):
             state["quality_feedback"] = feedback
             state["tool_call_count"] = 0
+            state["researcher_summary"] = None
         else:
             state["quality_feedback"] = None
         _add_trace(
