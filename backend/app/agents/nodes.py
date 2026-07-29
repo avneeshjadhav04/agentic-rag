@@ -16,6 +16,7 @@ from langchain.agents import create_agent
 from langchain.messages import ToolMessage
 from langchain.tools import InjectedToolCallId, ToolRuntime, tool
 from langchain_openai import ChatOpenAI
+from langgraph.types import Command
 from pydantic import BaseModel, Field
 
 from app.vectorstore.chroma_store import ChromaStore
