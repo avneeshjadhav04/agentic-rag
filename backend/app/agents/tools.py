@@ -180,7 +180,8 @@ def build_research_tools(
             if stop_event and stop_event.is_set():
                 return "[Stopped]"
 
-        result_text, docs = _vector_search(vector_store, k, query, llm, query)
+        grading_question = state.get("question", query) if state else query
+        result_text, docs = _vector_search(vector_store, k, query, llm, grading_question)
 
         source_counts = Counter(
             (doc.get("metadata", {}).get("source_id", "unknown"),
@@ -221,7 +222,8 @@ def build_research_tools(
                 if stop_event and stop_event.is_set():
                     return "[Stopped]"
 
-            result_text, docs = _web_fetch(url, url, llm)
+            grading_question = state.get("question", url) if state else url
+            result_text, docs = _web_fetch(url, grading_question, llm)
 
             add_trace(state, "tool_result", {
                 "tool": "web_fetch",

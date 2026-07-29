@@ -146,14 +146,18 @@ def main_agent_factory(
 
         add_trace(state, "research", {"query": query})
 
+        real_question = state.get("question", query)
         import app.agents.tools as tools_mod
         tools_mod._current_state = state
         try:
             result = research_agent.invoke({
-                "messages": [{"role": "user", "content": query}],
+                "messages": [{"role": "user", "content": (
+                    f"User's question: {real_question}\n\n"
+                    f"Suggested search query: {query}"
+                )}],
                 "documents": state.get("documents", []),
                 "trace": state.get("trace", []),
-                "question": state.get("question", ""),
+                "question": real_question,
                 "stop_event": state.get("stop_event"),
             })
         finally:
@@ -196,8 +200,10 @@ def main_agent_factory(
 
         add_trace(state, "draft", {"query_length": len(query)})
 
+        real_question = state.get("question", "")
+        draft_input = f"User's question: {real_question}\n\n{query}" if real_question else query
         result = writer_agent.invoke({
-            "messages": [{"role": "user", "content": query}],
+            "messages": [{"role": "user", "content": draft_input}],
         })
         draft = result["messages"][-1].content
 
@@ -218,8 +224,8 @@ def main_agent_factory(
             "You are the main agent of a multi-agent RAG system. You coordinate "
             "specialized subagents and produce the final answer.\n\n"
             "Workflow:\n"
-            "1. Call the `research` tool with the user's question to gather relevant "
-            "context from the knowledge base.\n"
+            "1. Call the `research` tool with the user's EXACT question — pass it "
+            "verbatim, do not reformulate, paraphrase, or simplify it.\n"
             "2. Call the `draft_answer` tool with the question and research findings to "
             "get a draft answer.\n"
             "3. Review the draft and respond with your final, polished answer as plain "
