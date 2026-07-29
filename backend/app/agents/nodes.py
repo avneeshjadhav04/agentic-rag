@@ -148,7 +148,7 @@ def main_agent_factory(
 
         return Command(update={
             "documents": subagent_docs,
-            "trace": subagent_trace,
+            "trace": state.get("trace", []) + subagent_trace,
             "messages": [ToolMessage(content=findings, tool_call_id=tool_call_id)],
         })
 
@@ -176,6 +176,7 @@ def main_agent_factory(
 
         return Command(update={
             "messages": [ToolMessage(content=draft, tool_call_id=tool_call_id)],
+            "trace": state.get("trace", []),
         })
 
     @tool("finalize_answer", description=(
@@ -198,6 +199,7 @@ def main_agent_factory(
             update={
                 "generation": answer,
                 "messages": [ToolMessage(content="Final answer submitted.", tool_call_id=tool_call_id)],
+                "trace": state.get("trace", []),
             },
         )
 

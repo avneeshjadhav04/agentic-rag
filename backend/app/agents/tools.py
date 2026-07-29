@@ -17,13 +17,14 @@ import uuid
 from collections import Counter
 from typing import Annotated
 
-from langchain.tools import InjectedToolCallId, tool
+from langchain.tools import InjectedToolCallId, ToolRuntime, tool
 from langchain_openai import ChatOpenAI
 from pydantic import BaseModel, Field
 
 from app.search.webfetch import fetch_url
 from app.vectorstore.chroma_store import ChromaStore, PARENT_CHAR_CAP, WINDOW_RADIUS
 
+from .state import WorkflowState
 from .trace import add_trace
 
 
@@ -160,6 +161,7 @@ def build_research_tools(
     @tool
     def vector_search(
         query: str,
+        runtime: ToolRuntime[None, WorkflowState],
         tool_call_id: Annotated[str, InjectedToolCallId],
     ) -> str:
         """Search the local document knowledge base for relevant information.
@@ -178,7 +180,7 @@ def build_research_tools(
             for (sid, name), count in source_counts.items()
         ]
 
-        add_trace({}, "tool_result", {
+        add_trace(runtime.state, "tool_result", {
             "tool": "vector_search",
             "query": query,
             "new_docs": len(docs),
@@ -194,6 +196,7 @@ def build_research_tools(
         @tool
         def web_fetch(
             url: str,
+            runtime: ToolRuntime[None, WorkflowState],
             tool_call_id: Annotated[str, InjectedToolCallId],
         ) -> str:
             """Fetch content from a specific URL. Use this only when the local
@@ -202,7 +205,7 @@ def build_research_tools(
             """
             result_text, docs = _web_fetch(url, url, llm)
 
-            add_trace({}, "tool_result", {
+            add_trace(runtime.state, "tool_result", {
                 "tool": "web_fetch",
                 "url": url,
                 "new_docs": len(docs),
