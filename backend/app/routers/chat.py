@@ -73,6 +73,7 @@ async def chat_stream(
                     base_messages.append(HumanMessage(content=content))
                 elif role == "assistant":
                     base_messages.append(AIMessage(content=content))
+            base_messages.append(HumanMessage(content=question))
             state: WorkflowState = {
                 "messages": base_messages,
                 "question": question,

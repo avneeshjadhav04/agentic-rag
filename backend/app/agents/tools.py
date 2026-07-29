@@ -18,7 +18,9 @@ from collections import Counter
 from typing import Annotated
 
 from langchain.tools import InjectedToolCallId, tool
+from langchain_core.messages import ToolMessage
 from langchain_openai import ChatOpenAI
+from langgraph.types import Command
 from pydantic import BaseModel, Field
 
 from app.search.webfetch import fetch_url
@@ -147,9 +149,10 @@ def _format_docs_for_llm(docs: list[dict]) -> str:
 
 # ---------------------------------------------------------------------------
 # @tool functions — execute directly inside the research subagent's ReAct loop.
-# Each returns plain text (the formatted result) and pushes a trace event to
-# the live SSE buffer.  Documents are NOT updated via Command here — the
-# call_research wrapper in nodes.py handles that.
+# Each returns a Command that updates the subagent's documents state AND
+# appends a ToolMessage with the formatted result text for the LLM to read.
+# This way call_research in nodes.py can extract graded docs from the
+# subagent's final state via result["documents"].
 # ---------------------------------------------------------------------------
 
 def build_research_tools(
@@ -161,14 +164,14 @@ def build_research_tools(
     """Build the tool list for the research subagent.
 
     Returns real @tool-decorated functions that execute the search/fetch
-    logic directly and return the formatted result text.
+    logic directly and return a Command with graded docs + ToolMessage.
     """
 
     @tool
     def vector_search(
         query: str,
         tool_call_id: Annotated[str, InjectedToolCallId],
-    ) -> str:
+    ) -> Command:
         """Search the local document knowledge base for relevant information.
         Use this to find information from uploaded documents. You can call it
         multiple times with different queries to explore different aspects of the question.
@@ -178,7 +181,9 @@ def build_research_tools(
         if state is not None:
             stop_event = state.get("stop_event")
             if stop_event and stop_event.is_set():
-                return "[Stopped]"
+                return Command(update={
+                    "messages": [ToolMessage(content="[Stopped]", tool_call_id=tool_call_id)],
+                })
 
         grading_question = state.get("question", query) if state else query
         result_text, docs = _vector_search(vector_store, k, query, llm, grading_question)
@@ -201,7 +206,10 @@ def build_research_tools(
             "sources": sources_summary,
         })
 
-        return result_text
+        return Command(update={
+            "documents": docs,
+            "messages": [ToolMessage(content=result_text, tool_call_id=tool_call_id)],
+        })
 
     tools = [vector_search]
 
@@ -210,7 +218,7 @@ def build_research_tools(
         def web_fetch(
             url: str,
             tool_call_id: Annotated[str, InjectedToolCallId],
-        ) -> str:
+        ) -> Command:
             """Fetch content from a specific URL. Use this only when the local
             knowledge base doesn't contain enough information and you know a
             specific URL that likely has the answer. The URL must be real.
@@ -220,7 +228,9 @@ def build_research_tools(
             if state is not None:
                 stop_event = state.get("stop_event")
                 if stop_event and stop_event.is_set():
-                    return "[Stopped]"
+                    return Command(update={
+                        "messages": [ToolMessage(content="[Stopped]", tool_call_id=tool_call_id)],
+                    })
 
             grading_question = state.get("question", url) if state else url
             result_text, docs = _web_fetch(url, grading_question, llm)
@@ -232,7 +242,10 @@ def build_research_tools(
                 "total_docs": len(docs),
             })
 
-            return result_text
+            return Command(update={
+                "documents": docs,
+                "messages": [ToolMessage(content=result_text, tool_call_id=tool_call_id)],
+            })
 
         tools.append(web_fetch)
 

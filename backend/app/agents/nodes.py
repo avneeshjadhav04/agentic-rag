@@ -124,8 +124,9 @@ def main_agent_factory(
     # --- Tool wrappers ----------------------------------------------------
 
     @tool("research", description=(
-        "Research a question by searching the local knowledge base and optionally "
-        "fetching web pages. Returns a summary of relevant findings."
+        "Research the user's question by searching the local knowledge base and "
+        "optionally fetching web pages. Returns a summary of relevant findings. "
+        "Call this ONCE with the user's exact question."
     ))
     def call_research(
         query: str,
@@ -155,7 +156,7 @@ def main_agent_factory(
                     f"User's question: {real_question}\n\n"
                     f"Suggested search query: {query}"
                 )}],
-                "documents": state.get("documents", []),
+                "documents": [],
                 "trace": state.get("trace", []),
                 "question": real_question,
                 "stop_event": state.get("stop_event"),
@@ -178,8 +179,8 @@ def main_agent_factory(
         })
 
     @tool("draft_answer", description=(
-        "Draft an answer from the research findings and context. Pass the question "
-        "and any research findings as the query. Returns a draft answer."
+        "Draft an answer from the research findings. Pass the user's question "
+        "and the research findings as the query. Call this ONCE after research."
     ))
     def call_draft(
         query: str,
@@ -223,17 +224,19 @@ def main_agent_factory(
         system_prompt=(
             "You are the main agent of a multi-agent RAG system. You coordinate "
             "specialized subagents and produce the final answer.\n\n"
-            "Workflow:\n"
-            "1. Call the `research` tool with the user's EXACT question — pass it "
+            "Workflow (follow these steps IN ORDER, exactly once each):\n"
+            "1. Call the `research` tool ONCE with the user's EXACT question — pass it "
             "verbatim, do not reformulate, paraphrase, or simplify it.\n"
-            "2. Call the `draft_answer` tool with the question and research findings to "
-            "get a draft answer.\n"
-            "3. Review the draft and respond with your final, polished answer as plain "
-            "text — do NOT call any tools for the final answer.\n\n"
-            "If you receive quality feedback (a system message about issues), address "
-            "the feedback by researching more thoroughly and producing a better answer.\n\n"
+            "2. Call the `draft_answer` tool ONCE with the question and the research "
+            "findings to get a draft answer.\n"
+            "3. Respond with your final, polished answer as plain text — do NOT call "
+            "any tools for the final answer.\n\n"
+            "If you receive quality feedback (a system message about issues), repeat "
+            "the workflow from step 1, researching more thoroughly.\n\n"
             "Rules:\n"
             "- Always research before drafting.\n"
+            "- Call `research` exactly ONCE per attempt, not multiple times.\n"
+            "- Call `draft_answer` exactly ONCE per attempt, not multiple times.\n"
             "- Your final answer must be grounded in the research findings.\n"
             "- If research returns no relevant documents, state that the information "
             "is not available in the final answer."
@@ -324,7 +327,7 @@ def quality_check_node_factory(llm: ChatOpenAI):
                         f"Quality check failed (attempt {state['steps']}). "
                         f"Feedback: {feedback}\n\n"
                         "Please address these issues: research more thoroughly, "
-                        "draft a better answer, and call finalize_answer again."
+                        "draft a better answer, and respond with the improved answer."
                     )
                 )
             ]
