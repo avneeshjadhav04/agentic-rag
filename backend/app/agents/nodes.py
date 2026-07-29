@@ -2,19 +2,14 @@
 
 Architecture:
     START → main_agent ↔ (research, draft_answer, finalize_answer tools)
-                      ↓ (generation set via finalize_answer)
+                      ↓
+               prepare_generation (extracts answer if finalize wasn't called)
+                      ↓
                quality_check (deterministic node)
                       ↓
               pass / max_loops → END
               fail + retries   → QualityFeedbackMessage → main_agent (retry)
-
-The main agent is a ``create_agent`` instance with three tools backed by
-research and writer subagents.  The quality_check is a deterministic
-StateGraph node that grades ``state["generation"]`` against
-``state["documents"]`` using ``with_structured_output``.
 """
-import re
-import threading
 from typing import Annotated
 
 from langchain.agents import create_agent
@@ -28,28 +23,7 @@ from app.vectorstore.chroma_store import ChromaStore
 
 from .state import WorkflowState
 from .tools import build_research_tools, _grade_doc
-
-_trace_buffers: dict[int, list[dict]] = {}
-_trace_buffers_lock = threading.Lock()
-
-
-def set_trace_buffer(buf: list[dict]) -> None:
-    with _trace_buffers_lock:
-        _trace_buffers[threading.get_ident()] = buf
-
-
-def clear_trace_buffer() -> None:
-    with _trace_buffers_lock:
-        _trace_buffers.pop(threading.get_ident(), None)
-
-
-def _add_trace(state: WorkflowState, step: str, detail: dict) -> None:
-    entry = {"step": step, **detail}
-    state["trace"].append(entry)
-    with _trace_buffers_lock:
-        buf = _trace_buffers.get(threading.get_ident())
-    if buf is not None:
-        buf.append(entry)
+from .trace import add_trace, set_trace_buffer, clear_trace_buffer
 
 
 # ---------------------------------------------------------------------------
@@ -72,12 +46,7 @@ from langchain_core.messages import SystemMessage
 
 
 class QualityFeedbackMessage(SystemMessage):
-    """Feedback from the quality check step, injected as system context.
-
-    Subclasses SystemMessage (type="system") so the main agent treats it
-    as a system-level directive to act on, not as a user message or an
-    agent's output.
-    """
+    """Feedback from the quality check step, injected as system context."""
 
     def __init__(self, content: str, **kwargs):
         super().__init__(content=content, **kwargs)
@@ -125,6 +94,7 @@ def main_agent_factory(
             "- If the local knowledge base is empty or has no relevant results after "
             "reasonable effort, state that information is unavailable."
         ),
+        state_schema=WorkflowState,
     )
 
     # --- Writer subagent (no tools, generation only) ----------------------
@@ -159,22 +129,26 @@ def main_agent_factory(
     ) -> Command:
         """Delegate research to the research subagent."""
         state = runtime.state
-        current_trace = state.get("trace", [])
-        current_trace.append({"step": "research", "query": query})
+        add_trace(state, "research", {"query": query})
 
         result = research_agent.invoke({
             "messages": [{"role": "user", "content": query}],
+            "documents": state.get("documents", []),
+            "trace": state.get("trace", []),
+            "question": state.get("question", ""),
         })
         findings = result["messages"][-1].content
+        subagent_docs = result.get("documents", [])
+        subagent_trace = result.get("trace", [])
 
-        current_trace.append({
-            "step": "research_result",
+        add_trace(state, "research_result", {
             "findings_length": len(findings) if findings else 0,
-            "total_docs": len(state.get("documents", [])),
+            "total_docs": len(subagent_docs),
         })
 
         return Command(update={
-            "trace": current_trace,
+            "documents": subagent_docs,
+            "trace": subagent_trace,
             "messages": [ToolMessage(content=findings, tool_call_id=tool_call_id)],
         })
 
@@ -189,21 +163,18 @@ def main_agent_factory(
     ) -> Command:
         """Delegate drafting to the writer subagent."""
         state = runtime.state
-        current_trace = state.get("trace", [])
-        current_trace.append({"step": "draft", "query_length": len(query)})
+        add_trace(state, "draft", {"query_length": len(query)})
 
         result = writer_agent.invoke({
             "messages": [{"role": "user", "content": query}],
         })
         draft = result["messages"][-1].content
 
-        current_trace.append({
-            "step": "draft_result",
+        add_trace(state, "draft_result", {
             "draft_length": len(draft) if draft else 0,
         })
 
         return Command(update={
-            "trace": current_trace,
             "messages": [ToolMessage(content=draft, tool_call_id=tool_call_id)],
         })
 
@@ -219,15 +190,10 @@ def main_agent_factory(
     ) -> Command:
         """Submit the final answer to state["generation"]."""
         state = runtime.state
-        current_trace = state.get("trace", [])
-        current_trace.append({
-            "step": "finalize",
-            "answer_length": len(answer),
-        })
+        add_trace(state, "finalize", {"answer_length": len(answer)})
 
         return Command(update={
             "generation": answer,
-            "trace": current_trace,
             "messages": [ToolMessage(content="Final answer submitted.", tool_call_id=tool_call_id)],
         })
 
@@ -260,6 +226,22 @@ def main_agent_factory(
 
 
 # ---------------------------------------------------------------------------
+# Prepare generation — ensures state["generation"] is set before quality check
+# ---------------------------------------------------------------------------
+
+def prepare_generation_node(state: WorkflowState) -> dict:
+    """If finalize_answer wasn't called, extract generation from the last AIMessage."""
+    if state.get("generation"):
+        return {}
+    messages = state.get("messages", [])
+    if messages:
+        last = messages[-1]
+        if hasattr(last, "content") and not getattr(last, "tool_calls", None):
+            return {"generation": last.content}
+    return {}
+
+
+# ---------------------------------------------------------------------------
 # Quality check — deterministic node, always runs LLM
 # ---------------------------------------------------------------------------
 
@@ -274,11 +256,7 @@ def quality_check_node_factory(llm: ChatOpenAI):
         so the main agent sees the feedback on its next turn.
         """
         docs = state["documents"]
-        question = ""
-        for msg in state.get("messages", []):
-            if hasattr(msg, "type") and msg.type == "human":
-                question = msg.content if isinstance(msg.content, str) else str(msg.content)
-                break
+        question = state.get("question", "")
 
         generation = state.get("generation", "")
         context = "\n\n---\n\n".join(d["content"] for d in docs) if docs else "(no documents retrieved)"
@@ -312,7 +290,6 @@ def quality_check_node_factory(llm: ChatOpenAI):
         if not passed and state["steps"] < state.get("max_loops", 3):
             state["quality_feedback"] = feedback
             updates["quality_feedback"] = feedback
-            # Inject QualityFeedbackMessage so main agent sees it as a system directive
             updates["messages"] = [
                 QualityFeedbackMessage(
                     content=(
@@ -327,7 +304,7 @@ def quality_check_node_factory(llm: ChatOpenAI):
             state["quality_feedback"] = None
             updates["quality_feedback"] = None
 
-        _add_trace(state, "quality_check", {
+        add_trace(state, "quality_check", {
             "grounded": grounded,
             "answers_question": answers_question,
             "feedback": feedback,
@@ -344,10 +321,15 @@ def quality_check_node_factory(llm: ChatOpenAI):
 # ---------------------------------------------------------------------------
 
 def route_after_main(state: WorkflowState) -> str:
-    """Route to quality_check when generation is set, else continue main_agent."""
-    if state.get("generation") and not state.get("quality_passed", False):
+    """Always go to prepare_generation (which feeds into quality_check)."""
+    return "prepare_generation"
+
+
+def route_after_prepare(state: WorkflowState) -> str:
+    """Route to quality_check if generation is set, otherwise end."""
+    if state.get("generation"):
         return "quality_check"
-    return "main_agent"
+    return "end"
 
 
 def route_after_quality(state: WorkflowState) -> str:

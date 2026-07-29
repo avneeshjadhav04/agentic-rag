@@ -22,6 +22,7 @@ class WorkflowState(AgentState):
         structured_response: Optional[Any]       — result of response_format
 
     Custom fields:
+        question:         the original user question (for grading)
         documents:        graded, deduped docs gathered by the research subagent
         trace:            SSE trace events for live UI streaming
         generation:       the main agent's final answer (set by finalize_answer)
@@ -31,6 +32,7 @@ class WorkflowState(AgentState):
         max_loops:        max quality check retries (default 3)
         web_search_enabled: whether web_fetch is available to the researcher
     """
+    question: str
     documents: list[dict]
     trace: list[dict]
     generation: Optional[str]

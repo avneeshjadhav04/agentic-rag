@@ -57,7 +57,7 @@ async def chat_stream(
                 temperature=temperature,
                 web_search_enabled=web_search_enabled,
             )
-            from app.agents.nodes import set_trace_buffer, clear_trace_buffer
+            from app.agents.trace import set_trace_buffer, clear_trace_buffer
 
             trace_buffer: list[dict] = []
             history_messages = json.loads(messages)
@@ -71,6 +71,7 @@ async def chat_stream(
                     base_messages.append(AIMessage(content=content))
             state: WorkflowState = {
                 "messages": base_messages,
+                "question": question,
                 "documents": [],
                 "generation": None,
                 "trace": [],

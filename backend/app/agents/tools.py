@@ -3,26 +3,28 @@
 The research subagent is a ``create_agent`` instance with ``vector_search``
 and (optionally) ``web_fetch`` as its tools.  These are **real ``@tool``
 functions** — they execute directly inside the subagent's ReAct loop, grade
-results via ``_grade_doc``, deduplicate against existing state documents,
-and update ``state["documents"]`` and ``state["trace"]`` via ``Command``.
+results via ``_grade_doc``, and return the formatted result text.
 
-The writer subagent has no tools (generation only), so it does not use
-anything from this module.
+Documents are NOT updated via ``Command`` here — that would go to the
+subagent's state and get lost.  Instead, the ``call_research`` wrapper in
+``nodes.py`` extracts documents from the subagent's final state and merges
+them into the outer ``WorkflowState``.
+
+Trace events are pushed to the live SSE buffer via ``add_trace`` from
+``.trace``.
 """
 import uuid
 from collections import Counter
 from typing import Annotated
 
-from langchain.tools import InjectedToolCallId, ToolRuntime, tool
-from langchain.messages import ToolMessage
+from langchain.tools import InjectedToolCallId, tool
 from langchain_openai import ChatOpenAI
-from langgraph.types import Command
 from pydantic import BaseModel, Field
 
 from app.search.webfetch import fetch_url
 from app.vectorstore.chroma_store import ChromaStore, PARENT_CHAR_CAP, WINDOW_RADIUS
 
-from .state import WorkflowState
+from .trace import add_trace
 
 
 # ---------------------------------------------------------------------------
@@ -36,7 +38,7 @@ class GradeResult(BaseModel):
 
 
 # ---------------------------------------------------------------------------
-# Underlying execution helpers (shared by @tool wrappers and eval/grading)
+# Underlying execution helpers
 # ---------------------------------------------------------------------------
 
 def _build_window(children: list, target_start: int, radius: int = 2) -> str:
@@ -138,8 +140,9 @@ def _format_docs_for_llm(docs: list[dict]) -> str:
 
 # ---------------------------------------------------------------------------
 # @tool functions — execute directly inside the research subagent's ReAct loop.
-# Each returns a Command that updates state["documents"], state["trace"],
-# and appends a ToolMessage to messages.
+# Each returns plain text (the formatted result) and pushes a trace event to
+# the live SSE buffer.  Documents are NOT updated via Command here — the
+# call_research wrapper in nodes.py handles that.
 # ---------------------------------------------------------------------------
 
 def build_research_tools(
@@ -151,52 +154,39 @@ def build_research_tools(
     """Build the tool list for the research subagent.
 
     Returns real @tool-decorated functions that execute the search/fetch
-    logic directly and update WorkflowState via Command.
+    logic directly and return the formatted result text.
     """
 
     @tool
     def vector_search(
         query: str,
-        runtime: ToolRuntime[None, WorkflowState],
         tool_call_id: Annotated[str, InjectedToolCallId],
-    ) -> Command:
+    ) -> str:
         """Search the local document knowledge base for relevant information.
         Use this to find information from uploaded documents. You can call it
         multiple times with different queries to explore different aspects of the question.
         """
-        state = runtime.state
-        question = _extract_question(state)
-        result_text, docs = _vector_search(vector_store, k, query, llm, question)
-
-        existing_contents = {d["content"] for d in state.get("documents", [])}
-        new_docs = [d for d in docs if d["content"] not in existing_contents]
-
-        current_docs = state.get("documents", []) + new_docs
-        current_trace = state.get("trace", [])
+        result_text, docs = _vector_search(vector_store, k, query, llm, query)
 
         source_counts = Counter(
             (doc.get("metadata", {}).get("source_id", "unknown"),
              doc.get("metadata", {}).get("source", "unknown"))
-            for doc in new_docs
+            for doc in docs
         )
         sources_summary = [
             {"source_id": sid, "source_name": name, "chunks": count}
             for (sid, name), count in source_counts.items()
         ]
-        current_trace.append({
-            "step": "tool_result",
+
+        add_trace({}, "tool_result", {
             "tool": "vector_search",
             "query": query,
-            "new_docs": len(new_docs),
-            "total_docs": len(current_docs),
+            "new_docs": len(docs),
+            "total_docs": len(docs),
             "sources": sources_summary,
         })
 
-        return Command(update={
-            "documents": current_docs,
-            "trace": current_trace,
-            "messages": [ToolMessage(content=result_text, tool_call_id=tool_call_id)],
-        })
+        return result_text
 
     tools = [vector_search]
 
@@ -204,47 +194,23 @@ def build_research_tools(
         @tool
         def web_fetch(
             url: str,
-            runtime: ToolRuntime[None, WorkflowState],
             tool_call_id: Annotated[str, InjectedToolCallId],
-        ) -> Command:
+        ) -> str:
             """Fetch content from a specific URL. Use this only when the local
             knowledge base doesn't contain enough information and you know a
             specific URL that likely has the answer. The URL must be real.
             """
-            state = runtime.state
-            question = _extract_question(state)
-            result_text, docs = _web_fetch(url, question, llm)
+            result_text, docs = _web_fetch(url, url, llm)
 
-            existing_contents = {d["content"] for d in state.get("documents", [])}
-            new_docs = [d for d in docs if d["content"] not in existing_contents]
-
-            current_docs = state.get("documents", []) + new_docs
-            current_trace = state.get("trace", [])
-            current_trace.append({
-                "step": "tool_result",
+            add_trace({}, "tool_result", {
                 "tool": "web_fetch",
                 "url": url,
-                "new_docs": len(new_docs),
-                "total_docs": len(current_docs),
+                "new_docs": len(docs),
+                "total_docs": len(docs),
             })
 
-            return Command(update={
-                "documents": current_docs,
-                "trace": current_trace,
-                "messages": [ToolMessage(content=result_text, tool_call_id=tool_call_id)],
-            })
+            return result_text
 
         tools.append(web_fetch)
 
     return tools
-
-
-def _extract_question(state: WorkflowState) -> str:
-    """Extract the user's original question from the first HumanMessage in state."""
-    messages = state.get("messages", [])
-    for msg in messages:
-        if hasattr(msg, "type") and msg.type == "human":
-            return msg.content if isinstance(msg.content, str) else str(msg.content)
-        if isinstance(msg, dict) and msg.get("role") == "user":
-            return msg.get("content", "")
-    return ""

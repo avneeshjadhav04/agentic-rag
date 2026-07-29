@@ -131,6 +131,7 @@ def run_graph_for_question(graph, question: str) -> dict:
     from app.agents.state import WorkflowState
     state: WorkflowState = {
         "messages": [{"role": "user", "content": question}],
+        "question": question,
         "documents": [],
         "generation": None,
         "trace": [],

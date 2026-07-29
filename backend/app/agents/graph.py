@@ -2,16 +2,13 @@
 
 Topology:
     START → main_agent ↔ (research, draft_answer, finalize_answer tools)
-                      ↓ (generation set via finalize_answer)
+                      ↓
+               prepare_generation (extracts answer if finalize wasn't called)
+                      ↓
                quality_check (deterministic node)
                       ↓
               pass / max_loops → END
               fail + retries   → QualityFeedbackMessage → main_agent (retry)
-
-The main agent is a ``create_agent`` instance with three tools backed by
-research and writer subagents.  The quality_check is a deterministic
-StateGraph node that grades ``state["generation"]`` against
-``state["documents"]`` using ``with_structured_output``.
 """
 from langchain_openai import ChatOpenAI, OpenAIEmbeddings
 
@@ -19,8 +16,10 @@ from app.vectorstore.chroma_store import ChromaStore
 
 from .nodes import (
     main_agent_factory,
+    prepare_generation_node,
     quality_check_node_factory,
     route_after_main,
+    route_after_prepare,
     route_after_quality,
 )
 from .state import WorkflowState
@@ -49,13 +48,15 @@ def build_agentic_rag_graph(
     workflow = StateGraph(WorkflowState)
 
     workflow.add_node("main_agent", main_agent)
+    workflow.add_node("prepare_generation", prepare_generation_node)
     workflow.add_node("quality_check", quality_check)
 
     workflow.add_edge(START, "main_agent")
+    workflow.add_edge("main_agent", "prepare_generation")
     workflow.add_conditional_edges(
-        "main_agent",
-        route_after_main,
-        {"main_agent": "main_agent", "quality_check": "quality_check"},
+        "prepare_generation",
+        route_after_prepare,
+        {"quality_check": "quality_check", "end": END},
     )
     workflow.add_conditional_edges(
         "quality_check",
