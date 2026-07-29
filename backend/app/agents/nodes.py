@@ -90,6 +90,9 @@ def supervisor_node_factory(llm: ChatOpenAI):
             status_parts.append(f"Researcher's last action: {researcher_summary}")
         if has_generation:
             status_parts.append("An answer has been generated but failed quality check.")
+        writer_summary = state.get("writer_summary", "")
+        if writer_summary and has_generation:
+            status_parts.append(f"Writer's last output: {writer_summary}")
         if feedback:
             status_parts.append(f"Quality check feedback: {feedback}")
         status = "\n".join(status_parts)
@@ -380,6 +383,15 @@ def writer_node_factory(llm: ChatOpenAI):
             "length": len(generation),
             "sources_used": sources_used,
         })
+
+        # Build a concise summary for the supervisor — a preview of the
+        # writer's actual output so the supervisor can make better routing
+        # decisions on quality-check failure (re-search vs re-write).
+        if generation:
+            preview = generation[:200] + ("..." if len(generation) > 200 else "")
+            state["writer_summary"] = f"Generated answer ({len(generation)} chars): {preview}"
+        else:
+            state["writer_summary"] = "No answer generated"
         return state
 
     return writer
@@ -435,6 +447,7 @@ def quality_check_node_factory(llm: ChatOpenAI):
             state["quality_feedback"] = feedback
             state["tool_call_count"] = 0
             state["researcher_summary"] = None
+            state["writer_summary"] = None
         else:
             state["quality_feedback"] = None
         _add_trace(

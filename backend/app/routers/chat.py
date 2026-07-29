@@ -85,6 +85,7 @@ async def chat_stream(
                 "tool_call_count": 0,
                 "tool_call_id": None,
                 "researcher_summary": None,
+                "writer_summary": None,
                 "quality_feedback": None,
             }
 

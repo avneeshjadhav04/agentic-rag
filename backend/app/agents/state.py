@@ -21,4 +21,5 @@ class AgentState(TypedDict):
     tool_call_count: int
     tool_call_id: Optional[str]
     researcher_summary: Optional[str]
+    writer_summary: Optional[str]
     quality_feedback: Optional[str]

@@ -145,6 +145,7 @@ def run_graph_for_question(graph, question: str) -> dict:
         "tool_call_count": 0,
         "tool_call_id": None,
         "researcher_summary": None,
+        "writer_summary": None,
         "quality_feedback": None,
     }
     return graph.invoke(state, config={"recursion_limit": 25})
