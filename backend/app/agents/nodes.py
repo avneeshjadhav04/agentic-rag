@@ -173,6 +173,8 @@ def researcher_node_factory(llm: ChatOpenAI, tools: list, max_tool_calls: int = 
             "specific URL you are confident contains the answer.\n"
             "- You can call vector_search multiple times with different query phrasings "
             "to find different aspects of the question.\n"
+            "- Do NOT repeat the same query — if a previous search returned irrelevant "
+            "results, try a different query or use web_fetch instead.\n"
             "- When you have gathered enough context, call handoff to pass control back "
             "to the supervisor.\n"
             "- If the local knowledge base is empty or has no relevant results after "
@@ -272,18 +274,23 @@ def research_tools_node_factory(vector_store: ChromaStore, llm: ChatOpenAI, k: i
         question = state["question"]
         tool_call_id = state.get("tool_call_id")
 
+        # Dedup helper — prevents the same content from accumulating
+        # in state["documents"] across repeated searches.
+        existing_contents = {d["content"] for d in state["documents"]}
+
         if tool == "vector_search":
             query = args.get("query", question)
-            result_text, docs = _vector_search(vector_store, k, query)
-            if docs:
-                state["documents"].extend(docs)
+            result_text, docs = _vector_search(vector_store, k, query, llm, question)
+            new_docs = [d for d in docs if d["content"] not in existing_contents]
+            if new_docs:
+                state["documents"].extend(new_docs)
             state["messages"] = state.get("messages", []) + [
                 ToolMessage(content=result_text, tool_call_id=tool_call_id or ""),
             ]
             source_counts = Counter(
                 (doc.get("metadata", {}).get("source_id", "unknown"),
                  doc.get("metadata", {}).get("source", "unknown"))
-                for doc in docs
+                for doc in new_docs
             )
             sources_summary = [
                 {"source_id": sid, "source_name": name, "chunks": count}
@@ -292,7 +299,7 @@ def research_tools_node_factory(vector_store: ChromaStore, llm: ChatOpenAI, k: i
             _add_trace(state, "tool_result", {
                 "tool": "vector_search",
                 "query": query,
-                "new_docs": len(docs),
+                "new_docs": len(new_docs),
                 "total_docs": len(state["documents"]),
                 "sources": sources_summary,
             })
@@ -300,15 +307,16 @@ def research_tools_node_factory(vector_store: ChromaStore, llm: ChatOpenAI, k: i
         elif tool == "web_fetch":
             url = args.get("url", "")
             result_text, docs = _web_fetch(url, question, llm)
-            if docs:
-                state["documents"].extend(docs)
+            new_docs = [d for d in docs if d["content"] not in existing_contents]
+            if new_docs:
+                state["documents"].extend(new_docs)
             state["messages"] = state.get("messages", []) + [
                 ToolMessage(content=result_text, tool_call_id=tool_call_id or ""),
             ]
             _add_trace(state, "tool_result", {
                 "tool": "web_fetch",
                 "url": url,
-                "new_docs": len(docs),
+                "new_docs": len(new_docs),
                 "total_docs": len(state["documents"]),
             })
 

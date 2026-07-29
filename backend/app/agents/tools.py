@@ -55,7 +55,7 @@ def _build_window(children: list, target_start: int, radius: int = 2) -> str:
     return "\n".join(d.page_content for d in children[lo:hi])
 
 
-def _vector_search(vector_store: ChromaStore, k: int, query: str) -> tuple[str, list[dict]]:
+def _vector_search(vector_store: ChromaStore, k: int, query: str, llm: ChatOpenAI, question: str) -> tuple[str, list[dict]]:
     child_docs = vector_store.similarity_search(query, k=k)
     parents = vector_store.get_parents(
         list({d.metadata.get("source_id") for d in child_docs if d.metadata.get("source_id")})
@@ -81,7 +81,20 @@ def _vector_search(vector_store: ChromaStore, k: int, query: str) -> tuple[str, 
 
     if not expanded:
         return "No documents found in the local knowledge base for this query.", []
-    return _format_docs_for_llm(expanded), expanded
+
+    # Grade each expanded doc for relevance to the user's question.
+    # Only keep docs the grader deems relevant — prevents irrelevant
+    # content from polluting state["documents"] and eval metrics.
+    graded: list[dict] = []
+    for doc in expanded:
+        relevant, score, reason = _grade_doc(llm, question, doc["content"])
+        if relevant:
+            graded.append(doc)
+
+    if not graded:
+        return "Found documents in the local knowledge base but none were relevant to the question.", []
+
+    return _format_docs_for_llm(graded), graded
 
 
 def _web_fetch(url: str, query: str, llm: ChatOpenAI) -> tuple[str, list[dict]]:
