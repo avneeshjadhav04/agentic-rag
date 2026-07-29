@@ -128,27 +128,19 @@ def build_rag_graph(gen_cfg: dict, emb_cfg: dict):
 
 def run_graph_for_question(graph, question: str) -> dict:
     """Invoke the RAG graph for a single question and return the final state."""
-    from app.agents.state import AgentState
-    state: AgentState = {
-        "question": question,
-        "messages": [],
+    from app.agents.state import WorkflowState
+    state: WorkflowState = {
+        "messages": [{"role": "user", "content": question}],
         "documents": [],
         "generation": None,
         "trace": [],
         "steps": 0,
-        "web_search_enabled": False,
-        "max_loops": 3,
         "quality_passed": False,
-        "next_agent": None,
-        "pending_tool": None,
-        "pending_args": None,
-        "tool_call_count": 0,
-        "tool_call_id": None,
-        "researcher_summary": None,
-        "writer_summary": None,
         "quality_feedback": None,
+        "max_loops": 3,
+        "web_search_enabled": False,
     }
-    return graph.invoke(state, config={"recursion_limit": 25})
+    return graph.invoke(state, config={"recursion_limit": 50})
 
 
 def _read_golden_file() -> Optional[dict]:

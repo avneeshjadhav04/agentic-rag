@@ -9,7 +9,7 @@ from fastapi.responses import StreamingResponse
 from langchain_core.messages import AIMessage, HumanMessage
 
 from app.agents.graph import build_agentic_rag_graph
-from app.agents.state import AgentState
+from app.agents.state import WorkflowState
 from app.models.factory import get_generation_llm, get_embeddings
 from app.sse import SSE_HEADERS
 from app.vectorstore.chroma_store import ChromaStore
@@ -69,30 +69,22 @@ async def chat_stream(
                     base_messages.append(HumanMessage(content=content))
                 elif role == "assistant":
                     base_messages.append(AIMessage(content=content))
-            state: AgentState = {
-                "question": question,
+            state: WorkflowState = {
                 "messages": base_messages,
                 "documents": [],
                 "generation": None,
                 "trace": [],
                 "steps": 0,
-                "web_search_enabled": web_search_enabled,
-                "max_loops": 3,
                 "quality_passed": False,
-                "next_agent": None,
-                "pending_tool": None,
-                "pending_args": None,
-                "tool_call_count": 0,
-                "tool_call_id": None,
-                "researcher_summary": None,
-                "writer_summary": None,
                 "quality_feedback": None,
+                "max_loops": 3,
+                "web_search_enabled": web_search_enabled,
             }
 
             def run_graph():
                 set_trace_buffer(trace_buffer)
                 try:
-                    return graph.invoke(state, config={"recursion_limit": 25})
+                    return graph.invoke(state, config={"recursion_limit": 50})
                 finally:
                     clear_trace_buffer()
 

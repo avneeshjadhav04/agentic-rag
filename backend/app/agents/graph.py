@@ -1,38 +1,35 @@
-"""LangGraph assembly for the multi-agent RAG workflow.
+"""LangGraph assembly for the multi-agent RAG workflow (subagents pattern).
 
 Topology:
-    supervisor → researcher ↔ research_tools → supervisor
-    supervisor → writer → supervisor
-    supervisor → quality_check → supervisor (or END)
+    START → main_agent ↔ (research, draft_answer, finalize_answer tools)
+                      ↓ (generation set via finalize_answer)
+               quality_check (deterministic node)
+                      ↓
+              pass / max_loops → END
+              fail + retries   → QualityFeedbackMessage → main_agent (retry)
 
-The supervisor is the sole orchestrator — every sub-agent returns to
-the supervisor, which decides the next step. The supervisor uses
-with_structured_output for routing. The researcher uses bind_tools
-for native tool-calling (vector_search, web_fetch, handoff). The
-writer synthesizes a grounded answer. The quality_check critic grades
-the answer and routes feedback back to the supervisor on failure.
+The main agent is a ``create_agent`` instance with three tools backed by
+research and writer subagents.  The quality_check is a deterministic
+StateGraph node that grades ``state["generation"]`` against
+``state["documents"]`` using ``with_structured_output``.
 """
 from langchain_openai import ChatOpenAI, OpenAIEmbeddings
 
 from app.vectorstore.chroma_store import ChromaStore
 
 from .nodes import (
+    main_agent_factory,
     quality_check_node_factory,
-    research_tools_node_factory,
-    researcher_node_factory,
+    route_after_main,
     route_after_quality,
-    route_after_researcher,
-    route_after_supervisor,
-    supervisor_node_factory,
-    writer_node_factory,
 )
-from .state import AgentState
-from .tools import build_research_tools
+from .state import WorkflowState
 
 try:
-    from langgraph.graph import END, StateGraph
+    from langgraph.graph import END, START, StateGraph
 except ImportError:  # pragma: no cover
     END = "__end__"
+    START = "__start__"
     StateGraph = None
 
 
@@ -46,33 +43,24 @@ def build_agentic_rag_graph(
     if StateGraph is None:
         raise RuntimeError("langgraph is not installed")
 
-    tools = build_research_tools(vector_store, retrieval_k, llm, web_search_enabled)
+    main_agent = main_agent_factory(llm, vector_store, k=retrieval_k, web_search_enabled=web_search_enabled)
+    quality_check = quality_check_node_factory(llm)
 
-    workflow = StateGraph(AgentState)
+    workflow = StateGraph(WorkflowState)
 
-    workflow.add_node("supervisor", supervisor_node_factory(llm))
-    workflow.add_node("researcher", researcher_node_factory(llm, tools))
-    workflow.add_node("research_tools", research_tools_node_factory(vector_store, llm, k=retrieval_k))
-    workflow.add_node("writer", writer_node_factory(llm))
-    workflow.add_node("quality_check", quality_check_node_factory(llm))
+    workflow.add_node("main_agent", main_agent)
+    workflow.add_node("quality_check", quality_check)
 
-    workflow.set_entry_point("supervisor")
+    workflow.add_edge(START, "main_agent")
     workflow.add_conditional_edges(
-        "supervisor",
-        route_after_supervisor,
-        {"researcher": "researcher", "writer": "writer", "quality_check": "quality_check", "end": END},
+        "main_agent",
+        route_after_main,
+        {"main_agent": "main_agent", "quality_check": "quality_check"},
     )
-    workflow.add_conditional_edges(
-        "researcher",
-        route_after_researcher,
-        {"research_tools": "research_tools", "supervisor": "supervisor"},
-    )
-    workflow.add_edge("research_tools", "researcher")
-    workflow.add_edge("writer", "supervisor")
     workflow.add_conditional_edges(
         "quality_check",
         route_after_quality,
-        {"supervisor": "supervisor", "end": END},
+        {"main_agent": "main_agent", "end": END},
     )
 
     return workflow.compile()

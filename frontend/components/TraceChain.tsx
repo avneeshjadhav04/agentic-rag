@@ -17,10 +17,11 @@ interface TraceChainProps {
 // ---------------------------------------------------------------------------
 // Tree-building — transforms the flat trace array into a nested structure.
 //
-// supervisor    → opens/merges into the current Main Agent block (level 0)
-// researcher   → level-1 child of the current Main Agent
-// tool_result  → level-2 child of the current researcher (label = entry.tool)
-// writer       → level-1 child of the current Main Agent
+// Main Agent trace entries (research, research_result, draft, draft_result,
+// finalize) merge into the current Main Agent block (level 0).
+// tool_result  → level-2 child of the current Researcher (label = entry.tool)
+// research     → opens a Researcher block (level 1 child of Main Agent)
+// draft        → opens a Writer block (level 1 child of Main Agent)
 // quality_check → standalone level-0 root that closes the current Main Agent
 // ---------------------------------------------------------------------------
 
@@ -52,31 +53,24 @@ function buildTree(trace: TraceStep[]): TreeNode[] {
 
   for (const entry of trace) {
     switch (entry.step) {
-      case "supervisor": {
-        if (!currentMain) {
-          currentMain = makeNode("Main Agent", 0, entry);
-          roots.push(currentMain);
-        } else {
-          if (!currentMain.detail) {
-            currentMain.detail = entry;
-          } else {
-            currentMain.detail = {
-              ...currentMain.detail,
-              next: entry.next,
-              reason: entry.reason,
-            };
-          }
-        }
-        currentResearcher = null;
-        break;
-      }
-      case "researcher": {
+      case "research": {
         if (!currentMain) {
           currentMain = makeNode("Main Agent", 0);
           roots.push(currentMain);
         }
         currentResearcher = makeNode("Researcher", 1, entry);
         currentMain.children.push(currentResearcher);
+        break;
+      }
+      case "research_result": {
+        // Merge into the current researcher's detail
+        if (currentResearcher && currentResearcher.detail) {
+          currentResearcher.detail = {
+            ...currentResearcher.detail,
+            findings_length: entry.findings_length,
+            total_docs: entry.total_docs,
+          };
+        }
         break;
       }
       case "tool_result": {
@@ -89,13 +83,42 @@ function buildTree(trace: TraceStep[]): TreeNode[] {
         }
         break;
       }
-      case "writer": {
+      case "draft": {
         if (!currentMain) {
           currentMain = makeNode("Main Agent", 0);
           roots.push(currentMain);
         }
         const writerNode = makeNode("Writer", 1, entry);
         currentMain.children.push(writerNode);
+        break;
+      }
+      case "draft_result": {
+        // Merge into the last writer child's detail
+        if (currentMain) {
+          const lastChild = currentMain.children[currentMain.children.length - 1];
+          if (lastChild && lastChild.label === "Writer" && lastChild.detail) {
+            lastChild.detail = {
+              ...lastChild.detail,
+              draft_length: entry.draft_length,
+            };
+          }
+        }
+        break;
+      }
+      case "finalize": {
+        if (!currentMain) {
+          currentMain = makeNode("Main Agent", 0, entry);
+          roots.push(currentMain);
+        } else {
+          if (!currentMain.detail) {
+            currentMain.detail = entry;
+          } else {
+            currentMain.detail = {
+              ...currentMain.detail,
+              answer_length: entry.answer_length,
+            };
+          }
+        }
         break;
       }
       case "quality_check": {
