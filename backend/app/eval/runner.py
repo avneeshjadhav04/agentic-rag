@@ -140,6 +140,7 @@ def run_graph_for_question(graph, question: str) -> dict:
         "quality_feedback": None,
         "max_loops": 3,
         "web_search_enabled": False,
+        "stop_event": None,
     }
     return graph.invoke(state, config={"recursion_limit": 50})
 

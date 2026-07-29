@@ -1,6 +1,7 @@
 """Chat endpoints for the Agentic RAG backend."""
 import asyncio
 import json
+import threading
 from typing import AsyncGenerator
 
 from fastapi import APIRouter, Form, Request
@@ -15,6 +16,8 @@ from app.sse import SSE_HEADERS
 from app.vectorstore.chroma_store import ChromaStore
 
 router = APIRouter(prefix="/api/chat", tags=["chat"])
+
+HEARTBEAT_INTERVAL = 5
 
 
 def _build_graph(
@@ -50,6 +53,7 @@ async def chat_stream(
     temperature: float = Form(default=0.7),
 ):
     async def event_generator() -> AsyncGenerator[str, None]:
+        stop_event = threading.Event()
         try:
             graph = _build_graph(
                 generation_base_url, generation_model, generation_api_key,
@@ -80,6 +84,7 @@ async def chat_stream(
                 "quality_feedback": None,
                 "max_loops": 3,
                 "web_search_enabled": web_search_enabled,
+                "stop_event": stop_event,
             }
 
             def run_graph():
@@ -94,7 +99,10 @@ async def chat_stream(
             while not task.done():
                 while trace_buffer:
                     yield f"event: trace\ndata: {json.dumps(trace_buffer.pop(0))}\n\n"
-                await asyncio.sleep(0.05)
+                try:
+                    await asyncio.wait_for(asyncio.sleep(HEARTBEAT_INTERVAL), timeout=HEARTBEAT_INTERVAL)
+                except asyncio.TimeoutError:
+                    yield ": keepalive\n\n"
 
             while trace_buffer:
                 yield f"event: trace\ndata: {json.dumps(trace_buffer.pop(0))}\n\n"
@@ -106,7 +114,12 @@ async def chat_stream(
                 payload = word if i == 0 else " " + word
                 yield f"data: {json.dumps(payload)}\n\n"
             yield f"event: done\ndata: {json.dumps({'trace': final_state.get('trace', [])})}\n\n"
+        except asyncio.CancelledError:
+            stop_event.set()
+            yield f"event: done\ndata: {json.dumps({'trace': []})}\n\n"
         except Exception as e:
             yield f"event: error\ndata: {json.dumps({'message': str(e)})}\n\n"
+        finally:
+            stop_event.set()
 
     return StreamingResponse(event_generator(), media_type="text/event-stream", headers=SSE_HEADERS)

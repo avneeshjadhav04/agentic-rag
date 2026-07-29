@@ -16,13 +16,12 @@ from langchain.agents import create_agent
 from langchain.messages import ToolMessage
 from langchain.tools import InjectedToolCallId, ToolRuntime, tool
 from langchain_openai import ChatOpenAI
-from langgraph.types import Command
 from pydantic import BaseModel, Field
 
 from app.vectorstore.chroma_store import ChromaStore
 
 from .state import WorkflowState
-from .tools import build_research_tools, _grade_doc
+from .tools import build_research_tools
 from .trace import add_trace, set_trace_buffer, clear_trace_buffer
 
 
@@ -129,6 +128,12 @@ def main_agent_factory(
     ) -> Command:
         """Delegate research to the research subagent."""
         state = runtime.state
+        stop_event = state.get("stop_event")
+        if stop_event and stop_event.is_set():
+            return Command(update={
+                "messages": [ToolMessage(content="[Stopped]", tool_call_id=tool_call_id)],
+            })
+
         add_trace(state, "research", {"query": query})
 
         result = research_agent.invoke({
@@ -136,6 +141,7 @@ def main_agent_factory(
             "documents": state.get("documents", []),
             "trace": state.get("trace", []),
             "question": state.get("question", ""),
+            "stop_event": state.get("stop_event"),
         })
         findings = result["messages"][-1].content
         subagent_docs = result.get("documents", [])
@@ -163,6 +169,12 @@ def main_agent_factory(
     ) -> Command:
         """Delegate drafting to the writer subagent."""
         state = runtime.state
+        stop_event = state.get("stop_event")
+        if stop_event and stop_event.is_set():
+            return Command(update={
+                "messages": [ToolMessage(content="[Stopped]", tool_call_id=tool_call_id)],
+            })
+
         add_trace(state, "draft", {"query_length": len(query)})
 
         result = writer_agent.invoke({
@@ -179,34 +191,10 @@ def main_agent_factory(
             "trace": state.get("trace", []),
         })
 
-    @tool("finalize_answer", description=(
-        "Submit your final answer. Call this when you are confident the answer is "
-        "complete and grounded in the research findings. This triggers the quality "
-        "check step."
-    ))
-    def call_finalize(
-        answer: str,
-        runtime: ToolRuntime[None, WorkflowState],
-        tool_call_id: Annotated[str, InjectedToolCallId],
-    ) -> Command:
-        """Submit the final answer to state["generation"] and exit the agent loop."""
-        state = runtime.state
-        add_trace(state, "finalize", {"answer_length": len(answer)})
-
-        return Command(
-            goto="prepare_generation",
-            graph=Command.PARENT,
-            update={
-                "generation": answer,
-                "messages": [ToolMessage(content="Final answer submitted.", tool_call_id=tool_call_id)],
-                "trace": state.get("trace", []),
-            },
-        )
-
     # --- Main agent (supervisor) ------------------------------------------
     main_agent = create_agent(
         model=llm,
-        tools=[call_research, call_draft, call_finalize],
+        tools=[call_research, call_draft],
         system_prompt=(
             "You are the main agent of a multi-agent RAG system. You coordinate "
             "specialized subagents and produce the final answer.\n\n"
@@ -215,8 +203,8 @@ def main_agent_factory(
             "context from the knowledge base.\n"
             "2. Call the `draft_answer` tool with the question and research findings to "
             "get a draft answer.\n"
-            "3. Review the draft and call `finalize_answer` with your final, polished "
-            "answer.\n\n"
+            "3. Review the draft and respond with your final, polished answer as plain "
+            "text — do NOT call any tools for the final answer.\n\n"
             "If you receive quality feedback (a system message about issues), address "
             "the feedback by researching more thoroughly and producing a better answer.\n\n"
             "Rules:\n"

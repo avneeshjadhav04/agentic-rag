@@ -168,6 +168,10 @@ def build_research_tools(
         Use this to find information from uploaded documents. You can call it
         multiple times with different queries to explore different aspects of the question.
         """
+        stop_event = runtime.state.get("stop_event")
+        if stop_event and stop_event.is_set():
+            return "[Stopped]"
+
         result_text, docs = _vector_search(vector_store, k, query, llm, query)
 
         source_counts = Counter(
@@ -203,6 +207,10 @@ def build_research_tools(
             knowledge base doesn't contain enough information and you know a
             specific URL that likely has the answer. The URL must be real.
             """
+            stop_event = runtime.state.get("stop_event")
+            if stop_event and stop_event.is_set():
+                return "[Stopped]"
+
             result_text, docs = _web_fetch(url, url, llm)
 
             add_trace(runtime.state, "tool_result", {

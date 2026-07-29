@@ -9,6 +9,7 @@ runs after the main agent produces its final answer.
 ``messages`` with the ``add_messages`` reducer and ``structured_response``)
 with the custom fields the RAG pipeline needs.
 """
+import threading
 from typing import Annotated, Optional
 
 from langchain.agents import AgentState
@@ -31,6 +32,7 @@ class WorkflowState(AgentState):
         quality_feedback: latest quality check feedback (for retries)
         max_loops:        max quality check retries (default 3)
         web_search_enabled: whether web_fetch is available to the researcher
+        stop_event:       threading.Event set when the client disconnects
     """
     question: str
     documents: list[dict]
@@ -41,3 +43,4 @@ class WorkflowState(AgentState):
     quality_feedback: Optional[str]
     max_loops: int
     web_search_enabled: bool
+    stop_event: Optional[threading.Event]
