@@ -12,7 +12,7 @@ interface ChatProps {
 }
 
 export default function Chat({ onToggleSidebar }: ChatProps) {
-  const { messages, addMessage, appendToLastMessage, appendTraceStep, isStreaming, setStreaming, abortController, setAbortController } = useChatStore();
+  const { messages, addMessage, appendToLastMessage, appendTraceStep, setLastMessageTrace, isStreaming, setStreaming, abortController, setAbortController } = useChatStore();
   const { generation, embedding, envGenerationApiKey, envEmbedApiKey, webSearchEnabled, temperature } = useConfigStore();
 
   const sendMessage = async (question: string) => {
@@ -37,6 +37,9 @@ export default function Chat({ onToggleSidebar }: ChatProps) {
           appendTraceStep(v.value);
         }
         result = await generator.next();
+      }
+      if (result.value?.trace) {
+        setLastMessageTrace(result.value.trace);
       }
     } catch (e: any) {
       if (e.name === "AbortError") {
