@@ -83,6 +83,8 @@ def supervisor_node_factory(llm: ChatOpenAI):
             status_parts.append(f"Documents gathered: {len(state['documents'])} from {doc_sources}")
         else:
             status_parts.append("No documents gathered yet.")
+        if state.get("tool_call_count", 0) > 0 and not has_docs:
+            status_parts.append("The researcher has already run but found no relevant documents in the knowledge base.")
         if has_generation:
             status_parts.append("An answer has been generated but failed quality check.")
         if feedback:
@@ -103,7 +105,10 @@ def supervisor_node_factory(llm: ChatOpenAI):
             f"User question: {question}\n\n"
             f"Quality check attempts so far: {steps}\n\n"
             "Guidelines:\n"
-            "- If no documents have been gathered yet, call researcher.\n"
+            "- If no documents have been gathered yet and the researcher has not run, "
+            "call researcher.\n"
+            "- If the researcher has already run but found no documents, call writer "
+            "to state that the information is not available.\n"
             "- If documents have been gathered and no answer exists, call writer.\n"
             "- If the answer failed quality check due to missing information, call "
             "researcher to find better context.\n"
@@ -116,7 +121,7 @@ def supervisor_node_factory(llm: ChatOpenAI):
             next_agent = result.next
             reason = result.reason
         except Exception:
-            next_agent = "researcher" if not has_docs else "writer"
+            next_agent = "writer" if state.get("tool_call_count", 0) > 0 and not has_docs else ("researcher" if not has_docs else "writer")
             reason = "Fallback: unable to parse supervisor decision"
 
         state["next_agent"] = next_agent
@@ -215,6 +220,11 @@ def researcher_node_factory(llm: ChatOpenAI, tools: list, max_tool_calls: int = 
         # on the next loop iteration.
         state["messages"] = state.get("messages", []) + [response]
 
+        # Increment the researcher invocation counter here (not in
+        # research_tools) so the force_handoff cap triggers even when the
+        # researcher never calls a tool (e.g. it answers directly).
+        state["tool_call_count"] = tool_call_count + 1
+
         state["pending_tool"] = tool
         state["pending_args"] = args
         state["tool_call_id"] = tool_call_id
@@ -287,7 +297,6 @@ def research_tools_node_factory(vector_store: ChromaStore, llm: ChatOpenAI, k: i
                 "total_docs": len(state["documents"]),
             })
 
-        state["tool_call_count"] = state.get("tool_call_count", 0) + 1
         state["pending_tool"] = None
         state["pending_args"] = None
         state["tool_call_id"] = None

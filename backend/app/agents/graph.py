@@ -72,4 +72,4 @@ def build_agentic_rag_graph(
         {"supervisor": "supervisor", "end": END},
     )
 
-    return workflow.compile()
+    return workflow.compile(recursion_limit=25)
