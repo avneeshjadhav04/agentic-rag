@@ -14,7 +14,7 @@ from typing import Annotated
 
 from langchain.agents import create_agent
 from langchain.messages import ToolMessage
-from langchain.tools import InjectedToolCallId, ToolRuntime, tool
+from langchain.tools import InjectedToolCallId, tool
 from langchain_openai import ChatOpenAI
 from langgraph.types import Command
 from pydantic import BaseModel, Field
@@ -24,6 +24,11 @@ from app.vectorstore.chroma_store import ChromaStore
 from .state import WorkflowState
 from .tools import build_research_tools
 from .trace import add_trace, set_trace_buffer, clear_trace_buffer
+
+# Module-level reference to the outer WorkflowState, set before graph.invoke()
+# and cleared after. create_agent does not inject ToolRuntime, so tool wrappers
+# use this to access the real state for trace appending and stop_event checks.
+_current_state: WorkflowState | None = None
 
 
 # ---------------------------------------------------------------------------
@@ -124,11 +129,15 @@ def main_agent_factory(
     ))
     def call_research(
         query: str,
-        runtime: ToolRuntime[None, WorkflowState],
         tool_call_id: Annotated[str, InjectedToolCallId],
     ) -> Command:
         """Delegate research to the research subagent."""
-        state = runtime.state
+        global _current_state
+        state = _current_state
+        if state is None:
+            return Command(update={
+                "messages": [ToolMessage(content="[No state]", tool_call_id=tool_call_id)],
+            })
         stop_event = state.get("stop_event")
         if stop_event and stop_event.is_set():
             return Command(update={
@@ -137,13 +146,18 @@ def main_agent_factory(
 
         add_trace(state, "research", {"query": query})
 
-        result = research_agent.invoke({
-            "messages": [{"role": "user", "content": query}],
-            "documents": state.get("documents", []),
-            "trace": state.get("trace", []),
-            "question": state.get("question", ""),
-            "stop_event": state.get("stop_event"),
-        })
+        import app.agents.tools as tools_mod
+        tools_mod._current_state = state
+        try:
+            result = research_agent.invoke({
+                "messages": [{"role": "user", "content": query}],
+                "documents": state.get("documents", []),
+                "trace": state.get("trace", []),
+                "question": state.get("question", ""),
+                "stop_event": state.get("stop_event"),
+            })
+        finally:
+            tools_mod._current_state = None
         findings = result["messages"][-1].content
         subagent_docs = result.get("documents", [])
         subagent_trace = result.get("trace", [])
@@ -165,11 +179,15 @@ def main_agent_factory(
     ))
     def call_draft(
         query: str,
-        runtime: ToolRuntime[None, WorkflowState],
         tool_call_id: Annotated[str, InjectedToolCallId],
     ) -> Command:
         """Delegate drafting to the writer subagent."""
-        state = runtime.state
+        global _current_state
+        state = _current_state
+        if state is None:
+            return Command(update={
+                "messages": [ToolMessage(content="[No state]", tool_call_id=tool_call_id)],
+            })
         stop_event = state.get("stop_event")
         if stop_event and stop_event.is_set():
             return Command(update={
@@ -217,7 +235,16 @@ def main_agent_factory(
         state_schema=WorkflowState,
     )
 
-    return main_agent
+    def wrapped_main_agent(state: WorkflowState) -> dict:
+        """Set _current_state before invoking the subgraph, clear after."""
+        global _current_state
+        _current_state = state
+        try:
+            return main_agent.invoke(state)
+        finally:
+            _current_state = None
+
+    return wrapped_main_agent
 
 
 # ---------------------------------------------------------------------------

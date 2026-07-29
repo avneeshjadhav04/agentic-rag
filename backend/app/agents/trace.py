@@ -21,9 +21,9 @@ def clear_trace_buffer() -> None:
 
 
 def add_trace(state, step: str, detail: dict) -> None:
-    """Append a trace entry to *state* and push it to the live SSE buffer."""
+    """Append a trace entry to *state* (if not None) and push it to the live SSE buffer."""
     entry = {"step": step, **detail}
-    if "trace" in state:
+    if state is not None and "trace" in state:
         state["trace"].append(entry)
     with _trace_buffers_lock:
         buf = _trace_buffers.get(threading.get_ident())

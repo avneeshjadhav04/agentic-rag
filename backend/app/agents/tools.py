@@ -17,7 +17,7 @@ import uuid
 from collections import Counter
 from typing import Annotated
 
-from langchain.tools import InjectedToolCallId, ToolRuntime, tool
+from langchain.tools import InjectedToolCallId, tool
 from langchain_openai import ChatOpenAI
 from pydantic import BaseModel, Field
 
@@ -26,6 +26,12 @@ from app.vectorstore.chroma_store import ChromaStore, PARENT_CHAR_CAP, WINDOW_RA
 
 from .state import WorkflowState
 from .trace import add_trace
+
+# Module-level reference to the outer WorkflowState, set by the wrapper in
+# nodes.py before the create_agent subgraph runs. create_agent does not inject
+# ToolRuntime, so research subagent tools use this for stop_event checks and
+# trace appending.
+_current_state: WorkflowState | None = None
 
 
 # ---------------------------------------------------------------------------
@@ -161,16 +167,18 @@ def build_research_tools(
     @tool
     def vector_search(
         query: str,
-        runtime: ToolRuntime[None, WorkflowState],
         tool_call_id: Annotated[str, InjectedToolCallId],
     ) -> str:
         """Search the local document knowledge base for relevant information.
         Use this to find information from uploaded documents. You can call it
         multiple times with different queries to explore different aspects of the question.
         """
-        stop_event = runtime.state.get("stop_event")
-        if stop_event and stop_event.is_set():
-            return "[Stopped]"
+        global _current_state
+        state = _current_state
+        if state is not None:
+            stop_event = state.get("stop_event")
+            if stop_event and stop_event.is_set():
+                return "[Stopped]"
 
         result_text, docs = _vector_search(vector_store, k, query, llm, query)
 
@@ -184,7 +192,7 @@ def build_research_tools(
             for (sid, name), count in source_counts.items()
         ]
 
-        add_trace(runtime.state, "tool_result", {
+        add_trace(state, "tool_result", {
             "tool": "vector_search",
             "query": query,
             "new_docs": len(docs),
@@ -200,20 +208,22 @@ def build_research_tools(
         @tool
         def web_fetch(
             url: str,
-            runtime: ToolRuntime[None, WorkflowState],
             tool_call_id: Annotated[str, InjectedToolCallId],
         ) -> str:
             """Fetch content from a specific URL. Use this only when the local
             knowledge base doesn't contain enough information and you know a
             specific URL that likely has the answer. The URL must be real.
             """
-            stop_event = runtime.state.get("stop_event")
-            if stop_event and stop_event.is_set():
-                return "[Stopped]"
+            global _current_state
+            state = _current_state
+            if state is not None:
+                stop_event = state.get("stop_event")
+                if stop_event and stop_event.is_set():
+                    return "[Stopped]"
 
             result_text, docs = _web_fetch(url, url, llm)
 
-            add_trace(runtime.state, "tool_result", {
+            add_trace(state, "tool_result", {
                 "tool": "web_fetch",
                 "url": url,
                 "new_docs": len(docs),
