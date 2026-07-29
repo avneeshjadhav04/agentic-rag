@@ -90,7 +90,7 @@ async def chat_stream(
             def run_graph():
                 set_trace_buffer(trace_buffer)
                 try:
-                    return graph.invoke(state)
+                    return graph.invoke(state, config={"recursion_limit": 25})
                 finally:
                     clear_trace_buffer()
 

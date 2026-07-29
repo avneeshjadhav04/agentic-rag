@@ -146,7 +146,7 @@ def run_graph_for_question(graph, question: str) -> dict:
         "tool_call_id": None,
         "quality_feedback": None,
     }
-    return graph.invoke(state)
+    return graph.invoke(state, config={"recursion_limit": 25})
 
 
 def _read_golden_file() -> Optional[dict]:
