@@ -188,14 +188,18 @@ def main_agent_factory(
         runtime: ToolRuntime[None, WorkflowState],
         tool_call_id: Annotated[str, InjectedToolCallId],
     ) -> Command:
-        """Submit the final answer to state["generation"]."""
+        """Submit the final answer to state["generation"] and exit the agent loop."""
         state = runtime.state
         add_trace(state, "finalize", {"answer_length": len(answer)})
 
-        return Command(update={
-            "generation": answer,
-            "messages": [ToolMessage(content="Final answer submitted.", tool_call_id=tool_call_id)],
-        })
+        return Command(
+            goto="prepare_generation",
+            graph=Command.PARENT,
+            update={
+                "generation": answer,
+                "messages": [ToolMessage(content="Final answer submitted.", tool_call_id=tool_call_id)],
+            },
+        )
 
     # --- Main agent (supervisor) ------------------------------------------
     main_agent = create_agent(
