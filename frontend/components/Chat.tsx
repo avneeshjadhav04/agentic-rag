@@ -12,7 +12,7 @@ interface ChatProps {
 }
 
 export default function Chat({ onToggleSidebar }: ChatProps) {
-  const { messages, addMessage, appendToLastMessage, appendTraceStep, setLastMessageTrace, isStreaming, setStreaming } = useChatStore();
+  const { messages, addMessage, appendToLastMessage, appendTraceStep, setLastMessageTrace, isStreaming, setStreaming, abortController, setAbortController } = useChatStore();
   const { generation, embedding, envGenerationApiKey, envEmbedApiKey, webSearchEnabled, temperature } = useConfigStore();
 
   const sendMessage = async (question: string) => {
@@ -23,8 +23,11 @@ export default function Chat({ onToggleSidebar }: ChatProps) {
     addMessage({ role: "assistant", content: "" });
     setStreaming(true);
 
+    const controller = new AbortController();
+    setAbortController(controller);
+
     try {
-      const generator = streamChat(question, effectiveGeneration, effectiveEmbedding, webSearchEnabled, temperature, history);
+      const generator = streamChat(question, effectiveGeneration, effectiveEmbedding, webSearchEnabled, temperature, history, controller.signal);
       let result = await generator.next();
       while (!result.done) {
         const v = result.value;
@@ -32,17 +35,27 @@ export default function Chat({ onToggleSidebar }: ChatProps) {
           appendToLastMessage(v.value as string);
         } else if (v.type === "trace") {
           appendTraceStep(v.value);
-          await new Promise(r => setTimeout(r, 500));
         }
         result = await generator.next();
       }
-      if (result.value && "trace" in result.value) {
-        setLastMessageTrace(result.value.trace || []);
+      if (result.value?.trace) {
+        setLastMessageTrace(result.value.trace);
       }
     } catch (e: any) {
-      appendToLastMessage("\n\nError: " + (e.message || "Chat request failed"));
+      if (e.name === "AbortError") {
+        appendToLastMessage("\n\n[Stopped]");
+      } else {
+        appendToLastMessage("\n\nError: " + (e.message || "Chat request failed"));
+      }
     } finally {
+      setAbortController(null);
       setStreaming(false);
+    }
+  };
+
+  const handleStop = () => {
+    if (abortController) {
+      abortController.abort();
     }
   };
 
@@ -50,7 +63,7 @@ export default function Chat({ onToggleSidebar }: ChatProps) {
     <div className="flex h-full flex-col">
       <ChatHeader onToggleSidebar={onToggleSidebar} />
       <ChatMessages messages={messages} isStreaming={isStreaming} />
-      <ChatInput onSend={sendMessage} disabled={isStreaming} />
+      <ChatInput onSend={sendMessage} onStop={handleStop} isStreaming={isStreaming} disabled={isStreaming} />
     </div>
   );
 }

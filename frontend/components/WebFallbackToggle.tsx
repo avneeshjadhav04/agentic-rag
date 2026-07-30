@@ -8,9 +8,9 @@ export default function WebFallbackToggle() {
   return (
     <section className="flex items-center justify-between">
       <div className="space-y-1">
-        <p className="text-sm text-text">Web Fetch Fallback</p>
+        <p className="text-sm text-text">Allow Web Fetch</p>
         <p className="font-mono text-[10px] uppercase tracking-widest text-muted">
-          Search web when docs are irrelevant
+          Let the researcher agent fetch web pages when needed
         </p>
       </div>
       <button

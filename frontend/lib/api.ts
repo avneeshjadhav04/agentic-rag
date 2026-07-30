@@ -172,7 +172,8 @@ export async function* streamChat(
   embedding: ProviderField,
   webSearchEnabled: boolean,
   temperature: number,
-  messages: { role: string; content: string }[] = []
+  messages: { role: string; content: string }[] = [],
+  signal?: AbortSignal,
 ): AsyncGenerator<
   { type: "token" | "trace"; value: string | any },
   { trace?: any[] } | null,
@@ -192,14 +193,11 @@ export async function* streamChat(
   form.append("web_search_enabled", String(webSearchEnabled));
   form.append("temperature", String(temperature));
 
-  const controller = new AbortController();
-  const timeout = setTimeout(() => controller.abort(), 60000);
   const res = await fetch(`${API_BASE}/api/chat/stream`, {
     method: "POST",
     body: form,
-    signal: controller.signal,
+    signal: signal,
   });
-  clearTimeout(timeout);
   if (!res.ok) {
     const body = await res.text().catch(() => "");
     throw new Error(`Chat request failed (${res.status}): ${body.slice(0, 200)}`);

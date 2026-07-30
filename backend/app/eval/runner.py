@@ -128,19 +128,21 @@ def build_rag_graph(gen_cfg: dict, emb_cfg: dict):
 
 def run_graph_for_question(graph, question: str) -> dict:
     """Invoke the RAG graph for a single question and return the final state."""
-    from app.agents.state import AgentState
-    state: AgentState = {
+    from app.agents.state import WorkflowState
+    state: WorkflowState = {
+        "messages": [{"role": "user", "content": question}],
         "question": question,
-        "messages": [],
         "documents": [],
-        "web_search_urls": [],
         "generation": None,
         "trace": [],
         "steps": 0,
-        "web_search_enabled": False,
+        "quality_passed": False,
+        "quality_feedback": None,
         "max_loops": 3,
+        "web_search_enabled": False,
+        "stop_event": None,
     }
-    return graph.invoke(state)
+    return graph.invoke(state, config={"recursion_limit": 50})
 
 
 def _read_golden_file() -> Optional[dict]:
@@ -199,13 +201,23 @@ def get_golden_providers() -> dict:
 
 
 def list_goldens() -> List[dict]:
-    """Return [{index, input, expected_output}] for each golden on disk, or [] if none."""
+    """Return [{index, input, expected_output, source_context}] for each
+    golden on disk, or [] if none.
+
+    source_context defaults to [] for datasets generated before that field
+    existed, keeping the shape backward-compatible.
+    """
     data = _read_golden_file()
     if data is None:
         return []
     goldens = _extract_goldens(data)
     return [
-        {"index": i, "input": g.get("input", ""), "expected_output": g.get("expected_output", "")}
+        {
+            "index": i,
+            "input": g.get("input", ""),
+            "expected_output": g.get("expected_output", ""),
+            "source_context": g.get("source_context", []),
+        }
         for i, g in enumerate(goldens)
     ]
 
@@ -596,20 +608,43 @@ def generate_goldens_streaming(
 
     embeddings = get_embeddings(emb_cfg["base_url"], emb_cfg["model"], emb_cfg["api_key"])
     store = ChromaStore(embeddings=embeddings)
+
+    # Build paired [child, parent] contexts for synthesis: each child chunk
+    # focuses the generated question (per-chunk diversity), while its parent
+    # doc (the full uploaded file) provides coherent, unsplit context for the
+    # expected output — so goldens are answerable from the same full-document
+    # context that parent-document retrieval now returns to the RAG graph.
+    # Falls back to [child] alone if no parents.json exists (stores ingested
+    # before parent-doc retrieval was added) — graceful degradation, no re-ingest.
     collection = store._get_store()._collection
-    results = collection.get(include=["documents"])
-    docs = results.get("documents", [])
-    if not docs:
+    results = collection.get(include=["documents", "metadatas"])
+    child_texts = results.get("documents", [])
+    child_metas = results.get("metadatas", [])
+    if not child_texts:
         raise ValueError("Chroma store is empty. Ingest documents first (via the UI or API).")
 
-    if len(docs) > MAX_GOLDENS:
-        stride = len(docs) / MAX_GOLDENS
-        docs = [docs[int(i * stride)] for i in range(MAX_GOLDENS)]
+    source_ids = list({(m or {}).get("source_id") for m in child_metas if m and m.get("source_id")})
+    parents = store.get_parents(source_ids)
+
+    contexts = []
+    for text, meta in zip(child_texts, child_metas):
+        sid = (meta or {}).get("source_id")
+        parent = parents.get(sid)
+        if parent:
+            contexts.append([text, parent.page_content])
+        else:
+            contexts.append([text])
+
+    if len(contexts) > MAX_GOLDENS:
+        stride = len(contexts) / MAX_GOLDENS
+        contexts = [contexts[int(i * stride)] for i in range(MAX_GOLDENS)]
 
     if progress_callback:
-        progress_callback({"stage": "synthesizing", "message": f"Synthesizing up to {len(docs)} goldens (this may take a few minutes)…"})
+        progress_callback({"stage": "synthesizing", "message": f"Synthesizing up to {len(contexts)} goldens (this may take a few minutes)…"})
 
     from deepeval.synthesizer import Synthesizer
+    from deepeval.synthesizer.config import EvolutionConfig, FiltrationConfig
+    from deepeval.synthesizer.types import Evolution
 
     judge = NvidiaNimJudge(eval_cfg["base_url"], eval_cfg["model"], eval_cfg["api_key"])
     # async_mode=False: generate_goldens_from_contexts() internally calls
@@ -617,17 +652,52 @@ def generate_goldens_streaming(
     # nest_asyncio patching of a running loop when this function is invoked
     # via asyncio.to_thread (the SSE path). The sync code path avoids that
     # fragility entirely while still producing the same goldens.
-    synthesizer = Synthesizer(model=judge, async_mode=False)
+    #
+    # filtration_config: DeepEval's native critic-LLM quality filter rejects
+    #   low-quality synthetic goldens during synthesis (no custom prompt).
+    #   max_quality_retries=1 caps the critic/rewrite loop at one pass instead
+    #   of the default 3, cutting filtration LLM calls from up to 6/golden to 2.
+    # evolution_config: the Synthesizer's default evolves extracted questions
+    #   via 7 strategies in equal proportion, including HYPOTHETICAL (what-if
+    #   questions that go BEYOND the source text), REASONING, and COMPARATIVE.
+    #   Those evolutions are what produce expected answers containing invented
+    #   advice absent from the corpus, which makes ContextualRecall
+    #   unsatisfiable. We restrict evolutions to text-grounded strategies that
+    #   stay answerable from the provided context. This is a native DeepEval
+    #   knob (no custom judgment code).
+    synthesizer = Synthesizer(
+        model=judge,
+        async_mode=False,
+        filtration_config=FiltrationConfig(
+            critic_model=judge,
+            synthetic_input_quality_threshold=0.5,
+            max_quality_retries=1,
+        ),
+        evolution_config=EvolutionConfig(
+            evolutions={
+                Evolution.CONCRETIZING: 1 / 3,
+                Evolution.CONSTRAINED: 1 / 3,
+                Evolution.IN_BREADTH: 1 / 3,
+            },
+        ),
+    )
     goldens_list = synthesizer.generate_goldens_from_contexts(
-        contexts=[[d] for d in docs],
+        contexts=contexts,
         max_goldens_per_context=1,
     )
 
+    # Persist DeepEval's golden.context as source_context per golden. This is
+    # pure bookkeeping (no LLM calls) and, with the groundedness flag removed,
+    # is the sole curation aid: each expected output is auditable against the
+    # exact source chunk it was synthesized from, enabling bias-free manual
+    # review (the project README already mandates curating goldens).
     goldens = []
     for golden in goldens_list:
+        source_context = golden.context or []
         goldens.append({
             "input": golden.input,
             "expected_output": golden.expected_output,
+            "source_context": source_context if isinstance(source_context, list) else ([source_context] if source_context else []),
         })
 
     output = {

@@ -1,6 +1,7 @@
 """Chat endpoints for the Agentic RAG backend."""
 import asyncio
 import json
+import threading
 from typing import AsyncGenerator
 
 from fastapi import APIRouter, Form, Request
@@ -9,11 +10,14 @@ from fastapi.responses import StreamingResponse
 from langchain_core.messages import AIMessage, HumanMessage
 
 from app.agents.graph import build_agentic_rag_graph
-from app.agents.state import AgentState
+from app.agents.state import WorkflowState
 from app.models.factory import get_generation_llm, get_embeddings
+from app.sse import SSE_HEADERS
 from app.vectorstore.chroma_store import ChromaStore
 
 router = APIRouter(prefix="/api/chat", tags=["chat"])
+
+HEARTBEAT_INTERVAL = 5
 
 
 def _build_graph(
@@ -24,11 +28,12 @@ def _build_graph(
     embed_model: str,
     embed_api_key: str,
     temperature: float = 0.7,
+    web_search_enabled: bool = False,
 ):
     llm = get_generation_llm(generation_base_url, generation_model, generation_api_key, temperature=temperature)
     embeddings = get_embeddings(embed_base_url, embed_model, embed_api_key)
     vector_store = ChromaStore(embeddings=embeddings)
-    return build_agentic_rag_graph(llm, embeddings, vector_store)
+    return build_agentic_rag_graph(llm, embeddings, vector_store, web_search_enabled=web_search_enabled)
 
 
 @router.post("/stream")
@@ -48,13 +53,15 @@ async def chat_stream(
     temperature: float = Form(default=0.7),
 ):
     async def event_generator() -> AsyncGenerator[str, None]:
+        stop_event = threading.Event()
         try:
             graph = _build_graph(
                 generation_base_url, generation_model, generation_api_key,
                 embed_base_url, embed_model, embed_api_key,
                 temperature=temperature,
+                web_search_enabled=web_search_enabled,
             )
-            from app.agents.nodes import set_trace_buffer, clear_trace_buffer
+            from app.agents.trace import set_trace_buffer, clear_trace_buffer
 
             trace_buffer: list[dict] = []
             history_messages = json.loads(messages)
@@ -66,22 +73,25 @@ async def chat_stream(
                     base_messages.append(HumanMessage(content=content))
                 elif role == "assistant":
                     base_messages.append(AIMessage(content=content))
-            state: AgentState = {
-                "question": question,
+            base_messages.append(HumanMessage(content=question))
+            state: WorkflowState = {
                 "messages": base_messages,
+                "question": question,
                 "documents": [],
-                "web_search_urls": [],
                 "generation": None,
                 "trace": [],
                 "steps": 0,
-                "web_search_enabled": web_search_enabled,
+                "quality_passed": False,
+                "quality_feedback": None,
                 "max_loops": 3,
+                "web_search_enabled": web_search_enabled,
+                "stop_event": stop_event,
             }
 
             def run_graph():
                 set_trace_buffer(trace_buffer)
                 try:
-                    return graph.invoke(state)
+                    return graph.invoke(state, config={"recursion_limit": 50})
                 finally:
                     clear_trace_buffer()
 
@@ -90,7 +100,10 @@ async def chat_stream(
             while not task.done():
                 while trace_buffer:
                     yield f"event: trace\ndata: {json.dumps(trace_buffer.pop(0))}\n\n"
-                await asyncio.sleep(0.05)
+                try:
+                    await asyncio.wait_for(asyncio.sleep(HEARTBEAT_INTERVAL), timeout=HEARTBEAT_INTERVAL)
+                except asyncio.TimeoutError:
+                    yield ": keepalive\n\n"
 
             while trace_buffer:
                 yield f"event: trace\ndata: {json.dumps(trace_buffer.pop(0))}\n\n"
@@ -102,7 +115,12 @@ async def chat_stream(
                 payload = word if i == 0 else " " + word
                 yield f"data: {json.dumps(payload)}\n\n"
             yield f"event: done\ndata: {json.dumps({'trace': final_state.get('trace', [])})}\n\n"
+        except asyncio.CancelledError:
+            stop_event.set()
+            yield f"event: done\ndata: {json.dumps({'trace': []})}\n\n"
         except Exception as e:
             yield f"event: error\ndata: {json.dumps({'message': str(e)})}\n\n"
+        finally:
+            stop_event.set()
 
-    return StreamingResponse(event_generator(), media_type="text/event-stream")
+    return StreamingResponse(event_generator(), media_type="text/event-stream", headers=SSE_HEADERS)

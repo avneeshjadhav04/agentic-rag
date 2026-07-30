@@ -11,8 +11,6 @@ const inputClass =
   "w-full bg-panel border border-line rounded-none px-3 py-2 text-sm text-text placeholder-muted transition";
 const btnPrimary =
   "flex items-center justify-center gap-2 px-4 py-2 rounded-none bg-accent text-background font-mono text-[11px] uppercase tracking-widest hover:bg-accent/80 transition disabled:opacity-40";
-const btnOutline =
-  "flex items-center justify-center gap-2 w-full px-4 py-2 rounded-none border border-line text-muted font-mono text-[11px] uppercase tracking-widest hover:border-accent hover:text-text transition disabled:opacity-40";
 
 export default function IngestionPanel() {
   const { embedding, envEmbedApiKey, chunkSize, chunkOverlap, setSourcesCount } = useConfigStore();
@@ -26,7 +24,6 @@ export default function IngestionPanel() {
   const [ingestProgress, setIngestProgress] = useState("");
   const [urlsLoading, setUrlsLoading] = useState(false);
   const [clearLoading, setClearLoading] = useState(false);
-  const loading = filesLoading || urlsLoading || clearLoading;
   const [message, setMessage] = useState("");
   const [messageType, setMessageType] = useState<"info" | "warn" | "error">("info");
   const [sources, setSources] = useState<SourceInfo[]>([]);
@@ -230,7 +227,7 @@ export default function IngestionPanel() {
                   <p className="font-mono text-[11px] text-text truncate flex-1" title={s.name}>{s.name}</p>
                   <button
                     onClick={() => handleDeleteSource(s.source_id)}
-                    disabled={deletingSource !== null}
+                    disabled={deletingSource !== null || clearLoading}
                     className="text-muted hover:text-text transition flex-shrink-0 disabled:opacity-40"
                     aria-label={`Remove ${s.name}`}
                   >
@@ -243,14 +240,20 @@ export default function IngestionPanel() {
                 </div>
               ))
             )}
+            {sources.length > 0 && (
+              <div className="pt-1">
+                <button
+                  onClick={handleClear}
+                  disabled={clearLoading || deletingSource !== null}
+                  className="font-mono text-[10px] uppercase tracking-widest text-muted hover:text-text transition disabled:opacity-40"
+                >
+                  {clearLoading ? <Loader2 className="w-3 h-3 animate-spin" /> : "Clear All"}
+                </button>
+              </div>
+            )}
           </div>
         )}
       </div>
-
-      {/* Clear store */}
-      <button onClick={handleClear} disabled={loading} className={btnOutline}>
-        Clear Vector Store
-      </button>
 
       {message && (
         <p className={`font-mono text-[11px] uppercase tracking-widest ${statusClass}`}>

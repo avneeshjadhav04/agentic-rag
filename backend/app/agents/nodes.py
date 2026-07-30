@@ -1,317 +1,370 @@
-"""LangGraph agent nodes for the Agentic RAG workflow."""
-import json
-import re
-import threading
-import uuid
-from collections import Counter, defaultdict
-from typing import Optional
+"""Nodes for the multi-agent RAG workflow (subagents pattern).
 
-from langchain_core.documents import Document
-from langchain_core.messages import HumanMessage, SystemMessage
-from langchain_openai import ChatOpenAI, OpenAIEmbeddings
+Architecture:
+    START → main_agent ↔ (research, draft_answer, finalize_answer tools)
+                      ↓
+               prepare_generation (extracts answer if finalize wasn't called)
+                      ↓
+               quality_check (deterministic node)
+                      ↓
+              pass / max_loops → END
+              fail + retries   → QualityFeedbackMessage → main_agent (retry)
+"""
+from typing import Annotated
 
-from app.search.webfetch import fetch_url
+from langchain.agents import create_agent
+from langchain.messages import ToolMessage
+from langchain.tools import InjectedToolCallId, tool
+from langchain_openai import ChatOpenAI
+from langgraph.types import Command
+from pydantic import BaseModel, Field
+
 from app.vectorstore.chroma_store import ChromaStore
 
-from .state import AgentState
+from .state import WorkflowState
+from .tools import build_research_tools
+from .trace import add_trace, set_trace_buffer, clear_trace_buffer
 
-_trace_buffers: dict[int, list[dict]] = {}
-_trace_buffers_lock = threading.Lock()
-
-
-def set_trace_buffer(buf: list[dict]) -> None:
-    with _trace_buffers_lock:
-        _trace_buffers[threading.get_ident()] = buf
-
-
-def clear_trace_buffer() -> None:
-    with _trace_buffers_lock:
-        _trace_buffers.pop(threading.get_ident(), None)
+# Module-level reference to the outer WorkflowState, set before graph.invoke()
+# and cleared after. create_agent does not inject ToolRuntime, so tool wrappers
+# use this to access the real state for trace appending and stop_event checks.
+_current_state: WorkflowState | None = None
 
 
-def _add_trace(state: AgentState, step: str, detail: dict) -> None:
-    entry = {"step": step, **detail}
-    state["trace"].append(entry)
-    with _trace_buffers_lock:
-        buf = _trace_buffers.get(threading.get_ident())
-    if buf is not None:
-        buf.append(entry)
+# ---------------------------------------------------------------------------
+# Pydantic schemas
+# ---------------------------------------------------------------------------
+
+class QualityResult(BaseModel):
+    grounded: bool = Field(description="Is the answer grounded in the context?")
+    answers_question: bool = Field(description="Does the answer address the question?")
+    feedback: str = Field(description="Feedback on the answer quality")
 
 
-def _llm_json_invoke(llm: ChatOpenAI, prompt: str, fallback: dict) -> dict:
-    try:
-        response = llm.invoke(prompt)
-        text = response.content if hasattr(response, "content") else str(response)
-        # Extract JSON if wrapped in markdown fences.
-        match = re.search(r"```json\s*(.*?)\s*```", text, re.DOTALL)
-        if match:
-            text = match.group(1)
-        return json.loads(text.strip())
-    except Exception:
-        return fallback
+# ---------------------------------------------------------------------------
+# QualityFeedbackMessage — system-level feedback injected after a failed
+# quality check. Subclasses SystemMessage so the LLM sees it as a system
+# directive, not a user turn or another agent's claim.
+# ---------------------------------------------------------------------------
+
+from langchain_core.messages import SystemMessage
 
 
-def retrieve_node_factory(vector_store: ChromaStore, k: int = 4):
-    def retrieve(state: AgentState) -> AgentState:
-        question = state.get("refined_question") or state["question"]
-        docs = vector_store.similarity_search(question, k=k)
-        state["documents"] = [
-            {"content": doc.page_content, "metadata": doc.metadata}
-            for doc in docs
-        ]
-        source_counts = Counter(
-            (doc.metadata.get("source_id", "unknown"), doc.metadata.get("source", "unknown"))
-            for doc in docs
-        )
-        sources_summary = [
-            {"source_id": sid, "source_name": name, "chunks": count}
-            for (sid, name), count in source_counts.items()
-        ]
-        _add_trace(
-            state,
-            "retrieve",
-            {"question": question, "count": len(docs), "sources": sources_summary},
-        )
-        return state
+class QualityFeedbackMessage(SystemMessage):
+    """Feedback from the quality check step, injected as system context."""
 
-    return retrieve
+    def __init__(self, content: str, **kwargs):
+        super().__init__(content=content, **kwargs)
 
 
-def grade_documents_node_factory(llm: ChatOpenAI):
-    def grade_documents(state: AgentState) -> AgentState:
-        question = state["question"]
-        doc_sources = [
-            (doc.get("metadata", {}).get("source_id", "unknown"), doc.get("metadata", {}).get("source", "unknown"))
-            for doc in state["documents"]
-        ]
-        graded: list[tuple[dict, int]] = []
-        grades = []
-        for i, doc in enumerate(state["documents"]):
-            content = doc["content"]
-            prompt = (
-                "You are a relevance grader. Given a user question and a document chunk, "
-                "respond with JSON: "
-                "{\"relevant\": true/false, \"score\": <0-10>, \"reason\": \"...\"}\n\n"
-                f"Question: {question}\n\n"
-                f"Document chunk:\n{content}\n\n"
-                "JSON:"
-            )
-            result = _llm_json_invoke(llm, prompt, {"relevant": True, "score": 5})
-            is_relevant = bool(result.get("relevant"))
-            score = int(result.get("score", 5))
-            grades.append({"index": i, "relevant": is_relevant, "score": score, "reason": result.get("reason", "")})
-            if is_relevant:
-                graded.append((doc, score))
-        graded.sort(key=lambda x: x[1], reverse=True)
-        state["documents"] = [d for d, _ in graded]
-        grouped: dict[str, list[dict]] = defaultdict(list)
-        for g in grades:
-            sid, name = doc_sources[g["index"]]
-            grouped[sid].append({**g, "source_id": sid, "source_name": name})
-        grades_by_source = [
-            {"source_id": sid, "source_name": chunks[0]["source_name"], "chunks": chunks}
-            for sid, chunks in grouped.items()
-        ]
-        _add_trace(state, "grade_documents", {"grades_by_source": grades_by_source, "relevant_count": len(graded)})
-        return state
+# ---------------------------------------------------------------------------
+# Main agent — create_agent with research, draft_answer, finalize_answer tools
+# ---------------------------------------------------------------------------
 
-    return grade_documents
+def main_agent_factory(
+    llm: ChatOpenAI,
+    vector_store: ChromaStore,
+    k: int = 4,
+    web_search_enabled: bool = False,
+):
+    """Build the main agent (supervisor) using create_agent + subagent tools.
 
+    The main agent has three tools:
+      - research: wraps a research subagent (create_agent with vector_search/web_fetch)
+      - draft_answer: wraps a writer subagent (create_agent, generation only)
+      - finalize_answer: writes the final answer to state["generation"]
 
-def route_after_grading(state: AgentState) -> str:
-    if state["documents"]:
-        return "generate"
-    if state["web_search_enabled"]:
-        return "propose_urls"
-    return "generate"
+    Returns a compiled CompiledStateGraph suitable for use as a node in the
+    outer workflow graph.
+    """
+    # --- Research subagent ------------------------------------------------
+    research_tools = build_research_tools(vector_store, k, llm, web_search_enabled)
 
-
-def propose_urls_node_factory(llm: ChatOpenAI):
-    def propose_urls(state: AgentState) -> AgentState:
-        question = state["question"]
-        prompt = (
-            "You are a research assistant. The user asked a question and no relevant "
-            "documents were found. Propose up to 3 authoritative URLs that likely contain "
-            "the answer. Respond with JSON: {\"urls\": [\"...\"]}\n\n"
-            f"Question: {question}\n\n"
-            "JSON:"
-        )
-        result = _llm_json_invoke(llm, prompt, {"urls": []})
-        urls = [u for u in result.get("urls", []) if isinstance(u, str)]
-        urls = urls[:3]
-        state["web_search_urls"] = urls
-        _add_trace(state, "propose_urls", {"proposed_urls": urls})
-        return state
-
-    return propose_urls
-
-
-def fetch_urls_node(state: AgentState) -> AgentState:
-    fetched: list[dict] = []
-    urls = state.get("web_search_urls", [])
-    for url in urls:
-        text = fetch_url(url)
-        if text:
-            fetched.append({"content": text, "metadata": {"source": url, "source_id": str(uuid.uuid4())}})
-    if fetched:
-        state["documents"].extend(fetched)
-    state["web_fetched_count"] = len(fetched)
-    _add_trace(
-        state,
-        "fetch_urls",
-        {"urls": urls, "successful_fetches": len(fetched)},
+    research_agent = create_agent(
+        model=llm,
+        tools=research_tools,
+        system_prompt=(
+            "You are a research agent in a multi-agent RAG system. Your job is to "
+            "gather relevant information to answer the user's question.\n\n"
+            "Rules:\n"
+            "- Always start by searching the local knowledge base with vector_search.\n"
+            "- If the local results are insufficient, you may call web_fetch with a "
+            "specific URL you are confident contains the answer.\n"
+            "- You can call vector_search multiple times with different query phrasings "
+            "to find different aspects of the question.\n"
+            "- Do NOT repeat the same query — if a previous search returned irrelevant "
+            "results, try a different query or use web_fetch instead.\n"
+            "- When you have gathered enough context, respond with a concise summary "
+            "of your findings.\n"
+            "- If the local knowledge base is empty or has no relevant results after "
+            "reasonable effort, state that information is unavailable."
+        ),
+        state_schema=WorkflowState,
     )
-    return state
+
+    # --- Writer subagent (no tools, generation only) ----------------------
+    writer_agent = create_agent(
+        model=llm,
+        tools=[],
+        system_prompt=(
+            "You are a helpful assistant. Use only the provided context to answer the "
+            "user's question. If the context does not contain enough information, say so. "
+            "Use markdown formatting only. Do not use HTML tags. For line breaks, "
+            "end the line with two spaces or use a blank line between paragraphs.\n\n"
+            "Follow these rules strictly:\n"
+            "- Answer the parts the context supports first. Only state what is missing "
+            "for the remainder, and only if it is genuinely absent.\n"
+            "- Answer exactly what was asked. Omit adjacent facts (other projects, "
+            "certifications, or purposes) that were not requested.\n"
+            "- Copy names, dates, and statuses verbatim as written in the context; do "
+            "not infer, correct, or alter them."
+        ),
+    )
+
+    # --- Tool wrappers ----------------------------------------------------
+
+    @tool("research", description=(
+        "Research the user's question by searching the local knowledge base and "
+        "optionally fetching web pages. Returns a summary of relevant findings. "
+        "Call this ONCE with the user's exact question."
+    ))
+    def call_research(
+        query: str,
+        tool_call_id: Annotated[str, InjectedToolCallId],
+    ) -> Command:
+        """Delegate research to the research subagent."""
+        global _current_state
+        state = _current_state
+        if state is None:
+            return Command(update={
+                "messages": [ToolMessage(content="[No state]", tool_call_id=tool_call_id)],
+            })
+        stop_event = state.get("stop_event")
+        if stop_event and stop_event.is_set():
+            return Command(update={
+                "messages": [ToolMessage(content="[Stopped]", tool_call_id=tool_call_id)],
+            })
+
+        add_trace(state, "research", {"query": query})
+
+        real_question = state.get("question", query)
+        import app.agents.tools as tools_mod
+        tools_mod._current_state = state
+        try:
+            result = research_agent.invoke({
+                "messages": [{"role": "user", "content": (
+                    f"User's question: {real_question}\n\n"
+                    f"Suggested search query: {query}"
+                )}],
+                "documents": [],
+                "trace": state.get("trace", []),
+                "question": real_question,
+                "stop_event": state.get("stop_event"),
+            })
+        finally:
+            tools_mod._current_state = None
+        findings = result["messages"][-1].content
+        subagent_docs = result.get("documents", [])
+        subagent_trace = result.get("trace", [])
+
+        add_trace(state, "research_result", {
+            "findings_length": len(findings) if findings else 0,
+            "total_docs": len(subagent_docs),
+        })
+
+        return Command(update={
+            "documents": subagent_docs,
+            "trace": state.get("trace", []) + subagent_trace,
+            "messages": [ToolMessage(content=findings, tool_call_id=tool_call_id)],
+        })
+
+    @tool("draft_answer", description=(
+        "Draft an answer from the research findings. Pass the user's question "
+        "and the research findings as the query. Call this ONCE after research."
+    ))
+    def call_draft(
+        query: str,
+        tool_call_id: Annotated[str, InjectedToolCallId],
+    ) -> Command:
+        """Delegate drafting to the writer subagent."""
+        global _current_state
+        state = _current_state
+        if state is None:
+            return Command(update={
+                "messages": [ToolMessage(content="[No state]", tool_call_id=tool_call_id)],
+            })
+        stop_event = state.get("stop_event")
+        if stop_event and stop_event.is_set():
+            return Command(update={
+                "messages": [ToolMessage(content="[Stopped]", tool_call_id=tool_call_id)],
+            })
+
+        add_trace(state, "draft", {"query_length": len(query)})
+
+        real_question = state.get("question", "")
+        draft_input = f"User's question: {real_question}\n\n{query}" if real_question else query
+        result = writer_agent.invoke({
+            "messages": [{"role": "user", "content": draft_input}],
+        })
+        draft = result["messages"][-1].content
+
+        add_trace(state, "draft_result", {
+            "draft_length": len(draft) if draft else 0,
+        })
+
+        return Command(update={
+            "messages": [ToolMessage(content=draft, tool_call_id=tool_call_id)],
+            "trace": state.get("trace", []),
+        })
+
+    # --- Main agent (supervisor) ------------------------------------------
+    main_agent = create_agent(
+        model=llm,
+        tools=[call_research, call_draft],
+        system_prompt=(
+            "You are the main agent of a multi-agent RAG system. You coordinate "
+            "specialized subagents and produce the final answer.\n\n"
+            "Workflow (follow these steps IN ORDER, exactly once each):\n"
+            "1. Call the `research` tool ONCE with the user's EXACT question — pass it "
+            "verbatim, do not reformulate, paraphrase, or simplify it.\n"
+            "2. Call the `draft_answer` tool ONCE with the question and the research "
+            "findings to get a draft answer.\n"
+            "3. Respond with your final, polished answer as plain text — do NOT call "
+            "any tools for the final answer.\n\n"
+            "If you receive quality feedback (a system message about issues), repeat "
+            "the workflow from step 1, researching more thoroughly.\n\n"
+            "Rules:\n"
+            "- Always research before drafting.\n"
+            "- Call `research` exactly ONCE per attempt, not multiple times.\n"
+            "- Call `draft_answer` exactly ONCE per attempt, not multiple times.\n"
+            "- Your final answer must be grounded in the research findings.\n"
+            "- If research returns no relevant documents, state that the information "
+            "is not available in the final answer."
+        ),
+        state_schema=WorkflowState,
+    )
+
+    def wrapped_main_agent(state: WorkflowState) -> dict:
+        """Set _current_state before invoking the subgraph, clear after."""
+        global _current_state
+        _current_state = state
+        try:
+            return main_agent.invoke(state)
+        finally:
+            _current_state = None
+
+    return wrapped_main_agent
 
 
-def grade_urls_node_factory(llm: ChatOpenAI):
-    def grade_urls(state: AgentState) -> AgentState:
-        question = state["question"]
-        docs = state["documents"]
-        web_count = state.get("web_fetched_count", 0)
-        if web_count == 0:
-            _add_trace(state, "grade_urls", {"grades_by_source": [], "relevant_count": 0})
-            return state
-        web_docs = docs[-web_count:]
-        doc_sources = [
-            (doc.get("metadata", {}).get("source_id", "unknown"), doc.get("metadata", {}).get("source", "unknown"))
-            for doc in web_docs
-        ]
-        graded: list[tuple[dict, int]] = []
-        grades = []
-        for i, doc in enumerate(web_docs):
-            content = doc["content"]
-            prompt = (
-                "You are a relevance grader. Given a user question and a document chunk, "
-                "respond with JSON: "
-                "{\"relevant\": true/false, \"score\": <0-10>, \"reason\": \"...\"}\n\n"
-                f"Question: {question}\n\n"
-                f"Document chunk:\n{content}\n\n"
-                "JSON:"
-            )
-            result = _llm_json_invoke(llm, prompt, {"relevant": True, "score": 5})
-            is_relevant = bool(result.get("relevant"))
-            score = int(result.get("score", 5))
-            grades.append({"index": i, "relevant": is_relevant, "score": score, "reason": result.get("reason", "")})
-            if is_relevant:
-                graded.append((doc, score))
-        graded.sort(key=lambda x: x[1], reverse=True)
-        relevant_docs = [d for d, _ in graded]
-        state["documents"] = docs[:-web_count] + relevant_docs
-        grouped: dict[str, list[dict]] = defaultdict(list)
-        for g in grades:
-            sid, name = doc_sources[g["index"]]
-            grouped[sid].append({**g, "source_id": sid, "source_name": name})
-        grades_by_source = [
-            {"source_id": sid, "source_name": chunks[0]["source_name"], "chunks": chunks}
-            for sid, chunks in grouped.items()
-        ]
-        _add_trace(state, "grade_urls", {"grades_by_source": grades_by_source, "relevant_count": len(graded)})
-        return state
+# ---------------------------------------------------------------------------
+# Prepare generation — ensures state["generation"] is set before quality check
+# ---------------------------------------------------------------------------
 
-    return grade_urls
+def prepare_generation_node(state: WorkflowState) -> dict:
+    """If finalize_answer wasn't called, extract generation from the last AIMessage."""
+    if state.get("generation"):
+        return {}
+    messages = state.get("messages", [])
+    if messages:
+        last = messages[-1]
+        if hasattr(last, "content") and not getattr(last, "tool_calls", None):
+            return {"generation": last.content}
+    return {}
 
 
-def generate_node_factory(llm: ChatOpenAI):
-    def generate(state: AgentState) -> AgentState:
-        question = state["question"]
-        docs = state["documents"]
-        if docs:
-            context_parts = []
-            for i, doc in enumerate(docs):
-                source = doc.get("metadata", {}).get("source", f"doc {i+1}")
-                context_parts.append(f"Source: {source}\n{doc['content']}")
-            context = "\n\n---\n\n".join(context_parts)
-        else:
-            context = "No relevant context found."
-        llm_messages = [
-            SystemMessage(content=(
-                "You are a helpful assistant. Use only the provided context to answer the "
-                "user's question. If the context does not contain enough information, say so. "
-                "Use markdown formatting only. Do not use HTML tags. For line breaks, "
-                "end the line with two spaces or use a blank line between paragraphs.\n\n"
-                f"Context:\n{context}"
-            )),
-            *state["messages"],
-            HumanMessage(content=question),
-        ]
-        response = llm.invoke(llm_messages)
-        generation = response.content if hasattr(response, "content") else str(response)
-        generation = re.sub(r"<br\s*/?>", "\n\n", generation, flags=re.IGNORECASE)
-        state["generation"] = generation
-        source_counts = Counter(
-            (doc.get("metadata", {}).get("source_id", "unknown"), doc.get("metadata", {}).get("source", "unknown"))
-            for doc in docs
-        )
-        sources_used = [
-            {"source_id": sid, "source_name": name, "chunks": count}
-            for (sid, name), count in source_counts.items()
-        ]
-        _add_trace(state, "generate", {"has_context": bool(docs), "length": len(generation), "sources_used": sources_used})
-        return state
-
-    return generate
-
+# ---------------------------------------------------------------------------
+# Quality check — deterministic node, always runs LLM
+# ---------------------------------------------------------------------------
 
 def quality_check_node_factory(llm: ChatOpenAI):
-    def quality_check(state: AgentState) -> AgentState:
+    structured_llm = llm.with_structured_output(QualityResult, method="function_calling")
+
+    def quality_check(state: WorkflowState) -> dict:
+        """Grade state["generation"] against state["documents"].
+
+        Always runs the LLM — no short-circuit on empty docs. On failure
+        with retries remaining, appends a QualityFeedbackMessage to messages
+        so the main agent sees the feedback on its next turn.
+        """
         docs = state["documents"]
-        if not docs:
-            state["steps"] += 1
-            state["quality_passed"] = True
-            _add_trace(
-                state,
-                "quality_check",
-                {
-                    "grounded": True,
-                    "answers_question": True,
-                    "feedback": "No context available \u2014 answer correctly states it lacks information.",
-                    "attempt": state["steps"],
-                },
-            )
-            return state
-        question = state["question"]
+        question = state.get("question", "")
+
         generation = state.get("generation", "")
-        docs = state["documents"]
-        context = "\n\n---\n\n".join(d["content"] for d in docs) if docs else ""
+        context = "\n\n---\n\n".join(d["content"] for d in docs) if docs else "(no documents retrieved)"
+
         prompt = (
             "You are a quality checker. Given a question, an answer, and supporting context, "
-            "respond with JSON: {\"grounded\": true/false, \"answers_question\": true/false, \"feedback\": \"...\"}\n\n"
+            "evaluate whether the answer is grounded in the context and addresses the question.\n\n"
             f"Question: {question}\n\n"
             f"Answer: {generation}\n\n"
-            f"Context:\n{context}\n\n"
-            "JSON:"
+            f"Context:\n{context}"
         )
-        result = _llm_json_invoke(llm, prompt, {"grounded": True, "answers_question": True})
-        grounded = bool(result.get("grounded"))
-        answers_question = bool(result.get("answers_question"))
-        feedback = result.get("feedback", "")
-        state["steps"] += 1
-        state["quality_passed"] = grounded and answers_question
-        if not state["quality_passed"] and state["steps"] < state.get("max_loops", 3):
-            state["refined_question"] = (
-                f"The previous answer had issues: {feedback}\n\n"
-                f"Original question: {question}\n\n"
-                f"Please search again with this refined understanding."
-            )
-        _add_trace(
-            state,
-            "quality_check",
-            {
-                "grounded": grounded,
-                "answers_question": answers_question,
-                "feedback": feedback,
-                "attempt": state["steps"],
-            },
-        )
-        return state
+        try:
+            result = structured_llm.invoke(prompt)
+            grounded = result.grounded
+            answers_question = result.answers_question
+            feedback = result.feedback
+        except Exception:
+            grounded = True
+            answers_question = True
+            feedback = "Fallback: unable to parse quality check result"
+
+        state["steps"] = state.get("steps", 0) + 1
+        passed = grounded and answers_question
+        state["quality_passed"] = passed
+
+        updates: dict = {
+            "steps": state["steps"],
+            "quality_passed": passed,
+        }
+
+        if not passed and state["steps"] < state.get("max_loops", 3):
+            state["quality_feedback"] = feedback
+            updates["quality_feedback"] = feedback
+            updates["messages"] = [
+                QualityFeedbackMessage(
+                    content=(
+                        f"Quality check failed (attempt {state['steps']}). "
+                        f"Feedback: {feedback}\n\n"
+                        "Please address these issues: research more thoroughly, "
+                        "draft a better answer, and respond with the improved answer."
+                    )
+                )
+            ]
+        else:
+            state["quality_feedback"] = None
+            updates["quality_feedback"] = None
+
+        add_trace(state, "quality_check", {
+            "grounded": grounded,
+            "answers_question": answers_question,
+            "feedback": feedback,
+            "attempt": state["steps"],
+        })
+
+        return updates
 
     return quality_check
 
 
-def route_after_quality(state: AgentState) -> str:
-    if state["quality_passed"]:
+# ---------------------------------------------------------------------------
+# Routing functions
+# ---------------------------------------------------------------------------
+
+def route_after_main(state: WorkflowState) -> str:
+    """Always go to prepare_generation (which feeds into quality_check)."""
+    return "prepare_generation"
+
+
+def route_after_prepare(state: WorkflowState) -> str:
+    """Route to quality_check if generation is set, otherwise end."""
+    if state.get("generation"):
+        return "quality_check"
+    return "end"
+
+
+def route_after_quality(state: WorkflowState) -> str:
+    """Route to END on pass or max_loops, else back to main_agent."""
+    if state.get("quality_passed") or state.get("steps", 0) >= state.get("max_loops", 3):
         return "end"
-    if state["steps"] >= state.get("max_loops", 3):
-        return "end"
-    return "retrieve"
+    return "main_agent"

@@ -1,9 +1,9 @@
 fastapi
-langgraph>=0.2.0
+langgraph>=1.0.0
 uvicorn[standard]
 pydantic
 python-multipart
-langchain
+langchain>=1.0.0
 langchain-community
 langchain-openai
 langchain-chroma>=0.1.3

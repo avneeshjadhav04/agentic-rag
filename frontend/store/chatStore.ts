@@ -4,17 +4,20 @@ import { create } from "zustand";
 export interface ChatState {
   messages: ChatMessage[];
   isStreaming: boolean;
+  abortController: AbortController | null;
   addMessage: (message: ChatMessage) => void;
   appendToLastMessage: (content: string) => void;
   appendTraceStep: (step: any) => void;
   setLastMessageTrace: (trace: any[]) => void;
   setStreaming: (streaming: boolean) => void;
+  setAbortController: (controller: AbortController | null) => void;
   clearMessages: () => void;
 }
 
 export const useChatStore = create<ChatState>()((set) => ({
   messages: [],
   isStreaming: false,
+  abortController: null,
 
   addMessage: (message) =>
     set((state) => ({ messages: [...state.messages, message] })),
@@ -55,6 +58,6 @@ export const useChatStore = create<ChatState>()((set) => ({
     }),
 
   setStreaming: (streaming) => set({ isStreaming: streaming }),
-
+  setAbortController: (controller) => set({ abortController: controller }),
   clearMessages: () => set({ messages: [] }),
 }));

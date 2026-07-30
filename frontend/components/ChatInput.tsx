@@ -1,15 +1,17 @@
 "use client";
 
 import { useState } from "react";
-import { ArrowUp } from "lucide-react";
+import { ArrowUp, Square } from "lucide-react";
 import { cn } from "@/lib/cn";
 
 interface ChatInputProps {
   onSend: (text: string) => void;
+  onStop: () => void;
+  isStreaming: boolean;
   disabled: boolean;
 }
 
-export default function ChatInput({ onSend, disabled }: ChatInputProps) {
+export default function ChatInput({ onSend, onStop, isStreaming, disabled }: ChatInputProps) {
   const [input, setInput] = useState("");
 
   const handleSend = () => {
@@ -23,7 +25,7 @@ export default function ChatInput({ onSend, disabled }: ChatInputProps) {
       <div
         className={cn(
           "mx-auto max-w-full md:max-w-3xl flex items-center border border-line bg-panel",
-          disabled && "opacity-40"
+          disabled && !isStreaming && "opacity-40"
         )}
       >
         <textarea
@@ -37,16 +39,27 @@ export default function ChatInput({ onSend, disabled }: ChatInputProps) {
           }}
           rows={2}
           placeholder="Message AI..."
-          disabled={disabled}
-          className="flex-1 bg-transparent px-4 py-3 text-sm text-text placeholder-muted resize-none focus:outline-none"
+          disabled={isStreaming}
+          className="flex-1 bg-transparent px-4 py-3 text-sm text-text placeholder-muted resize-none focus:outline-none disabled:opacity-60"
         />
-        <button
-          onClick={handleSend}
-          disabled={disabled || !input.trim()}
-          className="flex items-center justify-center rounded-sm w-10 h-10 mr-3 bg-accent text-background hover:bg-accent/80 transition disabled:opacity-40"
-        >
-          <ArrowUp className="w-4 h-4" />
-        </button>
+        {isStreaming ? (
+          <button
+            onClick={onStop}
+            className="flex items-center justify-center rounded-sm w-10 h-10 mr-3 bg-accent text-background hover:bg-accent/80 transition"
+            aria-label="Stop"
+          >
+            <Square className="w-4 h-4 fill-current" />
+          </button>
+        ) : (
+          <button
+            onClick={handleSend}
+            disabled={disabled || !input.trim()}
+            className="flex items-center justify-center rounded-sm w-10 h-10 mr-3 bg-accent text-background hover:bg-accent/80 transition disabled:opacity-40"
+            aria-label="Send"
+          >
+            <ArrowUp className="w-4 h-4" />
+          </button>
+        )}
       </div>
     </div>
   );

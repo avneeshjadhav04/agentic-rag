@@ -37,7 +37,7 @@ export default function Sidebar({ onClose }: SidebarProps) {
         <div>
           <h1 className="text-2xl font-semibold tracking-tighter text-text">Agentic RAG</h1>
           <p className="font-mono text-[11px] uppercase tracking-widest text-muted mt-1">
-            Multi-agent retrieval system
+            Multi-agent RAG system
           </p>
         </div>
         {onClose && (
