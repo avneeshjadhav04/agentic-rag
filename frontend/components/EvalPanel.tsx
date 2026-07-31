@@ -156,6 +156,7 @@ export default function EvalPanel() {
   const [newGoldenExpected, setNewGoldenExpected] = useState("");
   const [addingGolden, setAddingGolden] = useState(false);
   const [uploadingGoldens, setUploadingGoldens] = useState(false);
+  const [addGoldensExpanded, setAddGoldensExpanded] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
   const refreshResults = useCallback(async () => {
@@ -500,11 +501,98 @@ export default function EvalPanel() {
         </p>
       </section>
 
-      {/* Step II: Run Evals */}
+      {/* Step II: Add Goldens */}
+      <section className="space-y-3">
+        <div className="flex items-center gap-3">
+          {goldensExist && <Check className="w-3.5 h-3.5 text-success flex-shrink-0" />}
+          <span className="font-mono text-[11px] uppercase tracking-widest text-text">II.</span>
+          <button
+            onClick={() => setAddGoldensExpanded(!addGoldensExpanded)}
+            disabled={addingGolden || uploadingGoldens}
+            className={btnPrimary}
+          >
+            {addingGolden || uploadingGoldens ? (
+              <Loader2 className="w-3.5 h-3.5 animate-spin" />
+            ) : addGoldensExpanded ? (
+              <Minus className="w-3.5 h-3.5" />
+            ) : (
+              <Plus className="w-3.5 h-3.5" />
+            )}
+            Add Goldens
+          </button>
+        </div>
+        {addGoldensExpanded && (
+          <div className="space-y-1.5">
+            <textarea
+              value={newGoldenInput}
+              onChange={(e) => setNewGoldenInput(e.target.value)}
+              disabled={addingGolden || uploadingGoldens}
+              placeholder="Question"
+              rows={2}
+              className="w-full bg-panel border border-line rounded-none px-3 py-2 text-sm text-text placeholder-muted transition disabled:opacity-40 resize-none"
+            />
+            <textarea
+              value={newGoldenExpected}
+              onChange={(e) => setNewGoldenExpected(e.target.value)}
+              disabled={addingGolden || uploadingGoldens}
+              placeholder="Expected answer"
+              rows={3}
+              className="w-full bg-panel border border-line rounded-none px-3 py-2 text-sm text-text placeholder-muted transition disabled:opacity-40 resize-none"
+            />
+            <div className="flex items-center gap-2">
+              <button
+                onClick={handleAddGolden}
+                disabled={addingGolden || !newGoldenInput.trim() || !newGoldenExpected.trim()}
+                className={btnPrimary + " w-fit"}
+              >
+                {addingGolden ? (
+                  <>
+                    <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                    Adding…
+                  </>
+                ) : (
+                  <>
+                    <Plus className="w-3.5 h-3.5" />
+                    Add Golden
+                  </>
+                )}
+              </button>
+              <input
+                ref={fileInputRef}
+                type="file"
+                accept=".json"
+                multiple
+                onChange={handleUploadGoldens}
+                disabled={uploadingGoldens || addingGolden}
+                className="hidden"
+              />
+              <button
+                onClick={() => fileInputRef.current?.click()}
+                disabled={uploadingGoldens || addingGolden}
+                className="flex items-center gap-2 px-4 py-2 rounded-none border border-line text-muted font-mono text-[11px] uppercase tracking-widest hover:border-accent hover:text-text transition disabled:opacity-40"
+              >
+                {uploadingGoldens ? (
+                  <>
+                    <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                    Uploading…
+                  </>
+                ) : (
+                  <>
+                    <Upload className="w-3.5 h-3.5" />
+                    Upload Goldens
+                  </>
+                )}
+              </button>
+            </div>
+          </div>
+        )}
+      </section>
+
+      {/* Step III: Run Evals */}
       <section className="space-y-3">
         <div className="flex items-center gap-3">
           {summary && <Check className="w-3.5 h-3.5 text-success flex-shrink-0" />}
-          <span className="font-mono text-[11px] uppercase tracking-widest text-text">II.</span>
+          <span className="font-mono text-[11px] uppercase tracking-widest text-text">III.</span>
           <button onClick={handleRun} disabled={running} className={btnPrimary}>
             {running ? (
               <>
@@ -617,69 +705,6 @@ export default function EvalPanel() {
         </button>
         {goldensExpanded && (
           <div className="px-3 pb-3 space-y-2">
-            <div className="space-y-1.5">
-              <textarea
-                value={newGoldenInput}
-                onChange={(e) => setNewGoldenInput(e.target.value)}
-                disabled={addingGolden}
-                placeholder="Question"
-                rows={2}
-                className="w-full bg-panel border border-line rounded-none px-3 py-2 text-sm text-text placeholder-muted transition disabled:opacity-40 resize-none"
-              />
-              <textarea
-                value={newGoldenExpected}
-                onChange={(e) => setNewGoldenExpected(e.target.value)}
-                disabled={addingGolden}
-                placeholder="Expected answer"
-                rows={3}
-                className="w-full bg-panel border border-line rounded-none px-3 py-2 text-sm text-text placeholder-muted transition disabled:opacity-40 resize-none"
-              />
-              <button
-                onClick={handleAddGolden}
-                disabled={addingGolden || !newGoldenInput.trim() || !newGoldenExpected.trim()}
-                className={btnPrimary + " w-fit"}
-              >
-                {addingGolden ? (
-                  <>
-                    <Loader2 className="w-3.5 h-3.5 animate-spin" />
-                    Adding…
-                  </>
-                ) : (
-                  <>
-                    <Plus className="w-3.5 h-3.5" />
-                    Add Golden
-                  </>
-                )}
-              </button>
-              <div className="flex items-center gap-2 pt-1">
-                <input
-                  ref={fileInputRef}
-                  type="file"
-                  accept=".json"
-                  multiple
-                  onChange={handleUploadGoldens}
-                  disabled={uploadingGoldens}
-                  className="hidden"
-                />
-                <button
-                  onClick={() => fileInputRef.current?.click()}
-                  disabled={uploadingGoldens || addingGolden}
-                  className="flex items-center gap-2 px-4 py-2 rounded-none border border-line text-muted font-mono text-[11px] uppercase tracking-widest hover:border-accent hover:text-text transition disabled:opacity-40"
-                >
-                  {uploadingGoldens ? (
-                    <>
-                      <Loader2 className="w-3.5 h-3.5 animate-spin" />
-                      Uploading…
-                    </>
-                  ) : (
-                    <>
-                      <Upload className="w-3.5 h-3.5" />
-                      Upload Goldens
-                    </>
-                  )}
-                </button>
-              </div>
-            </div>
             <div className="max-h-40 overflow-y-auto space-y-1">
             {storedGoldens.length === 0 ? (
               <p className="font-mono text-[10px] uppercase tracking-widest text-muted">No goldens stored yet.</p>
