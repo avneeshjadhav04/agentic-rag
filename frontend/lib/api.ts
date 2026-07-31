@@ -406,7 +406,8 @@ export async function* streamEvalRun(
 
 export async function* streamGenerateGoldens(
   evaluation: ProviderField,
-  embedding: ProviderField
+  embedding: ProviderField,
+  count?: number
 ): AsyncGenerator<
   { type: "progress" | "done" | "error"; value: any },
   GoldenGenerationResult | null,
@@ -421,6 +422,9 @@ export async function* streamGenerateGoldens(
   form.append("embed_base_url", embedding.baseUrl);
   form.append("embed_model", embedding.model);
   form.append("embed_api_key", embedding.apiKey);
+  if (count && count > 0) {
+    form.append("max_goldens", String(count));
+  }
 
   const controller = new AbortController();
   const timeout = setTimeout(() => controller.abort(), 600000);

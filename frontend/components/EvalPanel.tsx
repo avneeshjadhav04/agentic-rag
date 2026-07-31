@@ -133,6 +133,7 @@ export default function EvalPanel() {
   const [summary, setSummary] = useState<EvalSummary | null>(null);
   const [running, setRunning] = useState(false);
   const [generating, setGenerating] = useState(false);
+  const [goldenCount, setGoldenCount] = useState<string>("");
   const [loadingResults, setLoadingResults] = useState(false);
   const [message, setMessage] = useState("");
   const [messageType, setMessageType] = useState<"info" | "warn" | "error">("info");
@@ -295,8 +296,10 @@ export default function EvalPanel() {
     setMessage("");
     setGenStage("Generating…");
     setElapsed(0);
+    const parsed = parseInt(goldenCount, 10);
+    const count = Number.isFinite(parsed) && parsed > 0 ? parsed : undefined;
     try {
-      const generator = streamGenerateGoldens(effectiveEvaluation, effectiveEmbedding);
+      const generator = streamGenerateGoldens(effectiveEvaluation, effectiveEmbedding, count);
       let result = await generator.next();
       while (!result.done) {
         if (result.value.type === "progress") {
@@ -514,6 +517,15 @@ export default function EvalPanel() {
               </>
             )}
           </button>
+          <input
+            type="number"
+            min={1}
+            value={goldenCount}
+            onChange={(e) => setGoldenCount(e.target.value)}
+            disabled={generating || running}
+            placeholder="all (≤20)"
+            className="w-24 bg-panel border border-line rounded-none px-2 py-2 text-sm text-text placeholder-muted transition disabled:opacity-40 [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none"
+          />
         </div>
         {generating && (
           <p className="font-mono text-[10px] uppercase tracking-widest text-muted">

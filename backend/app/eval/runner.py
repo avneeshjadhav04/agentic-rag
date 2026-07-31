@@ -577,15 +577,25 @@ def load_latest_results() -> Optional[dict]:
 def generate_goldens_streaming(
     emb_cfg: dict,
     eval_cfg: dict,
+    max_goldens: Optional[int] = None,
     progress_callback: Optional[Callable[[dict], None]] = None,
 ) -> dict:
-    """Synthesize up to MAX_GOLDENS goldens from the live Chroma store.
+    """Synthesize goldens from the live Chroma store, one per child chunk.
 
-    The store may contain hundreds of chunks; synthesizing one golden per
-    chunk (and then running the full RAG graph + 4 LLM-judge metrics per
-    golden in run_evals_streaming) scales linearly with corpus size. To keep
-    generation and evaluation bounded, the chunks are deterministically
-    sampled down to MAX_GOLDENS before synthesis.
+    Contexts are child chunks only (no parent docs) so each golden targets a
+    specific slice of a source document instead of clustering around the most
+    salient point of the full parent. This maximizes topical diversity across
+    the golden dataset.
+
+    max_goldens controls how many contexts are fed to the Synthesizer:
+      - None  → deterministic stride sample down to MAX_GOLDENS (default 20)
+      - N <= chunk count → first N child chunks
+      - N > chunk count  → cycle through chunks from the start (N total)
+
+    The Synthesizer processes each context independently and always produces
+    exactly one golden per context (max_goldens_per_context=1). The critic LLM
+    is disabled (max_quality_retries=0) — raw synthesized questions pass
+    through unchanged, so manual curation of the output dataset is required.
 
     Emits stage-level progress via progress_callback since the DeepEval
     Synthesizer does not emit per-golden progress callbacks.
@@ -609,35 +619,30 @@ def generate_goldens_streaming(
     embeddings = get_embeddings(emb_cfg["base_url"], emb_cfg["model"], emb_cfg["api_key"])
     store = ChromaStore(embeddings=embeddings)
 
-    # Build paired [child, parent] contexts for synthesis: each child chunk
-    # focuses the generated question (per-chunk diversity), while its parent
-    # doc (the full uploaded file) provides coherent, unsplit context for the
-    # expected output — so goldens are answerable from the same full-document
-    # context that parent-document retrieval now returns to the RAG graph.
-    # Falls back to [child] alone if no parents.json exists (stores ingested
-    # before parent-doc retrieval was added) — graceful degradation, no re-ingest.
+    # Build one context per child chunk. Each context is a single string so
+    # the Synthesizer generates a question about that specific slice instead
+    # of clustering around the most salient point of a full parent document.
     collection = store._get_store()._collection
     results = collection.get(include=["documents", "metadatas"])
     child_texts = results.get("documents", [])
-    child_metas = results.get("metadatas", [])
     if not child_texts:
         raise ValueError("Chroma store is empty. Ingest documents first (via the UI or API).")
 
-    source_ids = list({(m or {}).get("source_id") for m in child_metas if m and m.get("source_id")})
-    parents = store.get_parents(source_ids)
-
-    contexts = []
-    for text, meta in zip(child_texts, child_metas):
-        sid = (meta or {}).get("source_id")
-        parent = parents.get(sid)
-        if parent:
-            contexts.append([text, parent.page_content])
+    if max_goldens is None:
+        # Default: deterministic stride sample down to MAX_GOLDENS.
+        if len(child_texts) > MAX_GOLDENS:
+            stride = len(child_texts) / MAX_GOLDENS
+            selected = [child_texts[int(i * stride)] for i in range(MAX_GOLDENS)]
         else:
-            contexts.append([text])
+            selected = child_texts[:]
+    elif max_goldens <= len(child_texts):
+        selected = child_texts[:max_goldens]
+    else:
+        # Cycle through chunks from the start to reach the requested count.
+        n = len(child_texts)
+        selected = [child_texts[i % n] for i in range(max_goldens)]
 
-    if len(contexts) > MAX_GOLDENS:
-        stride = len(contexts) / MAX_GOLDENS
-        contexts = [contexts[int(i * stride)] for i in range(MAX_GOLDENS)]
+    contexts = [[text] for text in selected]
 
     if progress_callback:
         progress_callback({"stage": "synthesizing", "message": f"Synthesizing up to {len(contexts)} goldens (this may take a few minutes)…"})
@@ -653,10 +658,12 @@ def generate_goldens_streaming(
     # via asyncio.to_thread (the SSE path). The sync code path avoids that
     # fragility entirely while still producing the same goldens.
     #
-    # filtration_config: DeepEval's native critic-LLM quality filter rejects
-    #   low-quality synthetic goldens during synthesis (no custom prompt).
-    #   max_quality_retries=1 caps the critic/rewrite loop at one pass instead
-    #   of the default 3, cutting filtration LLM calls from up to 6/golden to 2.
+    # filtration_config: the critic LLM is fully disabled (max_quality_retries=0,
+    #   critic_model=None). DeepEval's _rewrite_inputs never discards goldens —
+    #   it only retries low-scoring inputs up to max_quality_retries times — so
+    #   setting retries to 0 means the raw synthesized question passes through
+    #   unchanged with zero critic LLM calls. Manual curation of the output
+    #   dataset (per the README) is the sole quality gate.
     # evolution_config: the Synthesizer's default evolves extracted questions
     #   via 7 strategies in equal proportion, including HYPOTHETICAL (what-if
     #   questions that go BEYOND the source text), REASONING, and COMPARATIVE.
@@ -669,9 +676,9 @@ def generate_goldens_streaming(
         model=judge,
         async_mode=False,
         filtration_config=FiltrationConfig(
-            critic_model=judge,
-            synthetic_input_quality_threshold=0.5,
-            max_quality_retries=1,
+            critic_model=None,
+            synthetic_input_quality_threshold=0.0,
+            max_quality_retries=0,
         ),
         evolution_config=EvolutionConfig(
             evolutions={

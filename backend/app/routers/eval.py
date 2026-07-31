@@ -2,11 +2,13 @@
 
 POST /api/eval/run              — SSE stream that runs DeepEval over the golden dataset,
                                    emitting per-golden progress + a final aggregate summary.
-POST /api/eval/generate-goldens — SSE stream that synthesizes ~20 goldens from the live
+POST /api/eval/generate-goldens — SSE stream that synthesizes goldens from the live
                                    Chroma store, emitting stage progress + final count.
+                                   Optional max_goldens form field controls how many
+                                   child chunks are fed to the Synthesizer (default 20).
 GET  /api/eval/results          — returns the latest on-disk eval result JSON.
 """
-from typing import Callable
+from typing import Callable, Optional
 
 from fastapi import APIRouter, Form
 from fastapi.responses import StreamingResponse
@@ -66,12 +68,13 @@ async def eval_generate_goldens(
     embed_base_url: str = Form(...),
     embed_model: str = Form(...),
     embed_api_key: str = Form(default=""),
+    max_goldens: Optional[int] = Form(default=None),
 ):
     eval_cfg = {"provider": evaluation_provider, "base_url": evaluation_base_url, "model": evaluation_model, "api_key": evaluation_api_key}
     emb_cfg = {"provider": embed_provider, "base_url": embed_base_url, "model": embed_model, "api_key": embed_api_key}
 
     def target(progress_callback: Callable[[dict], None]) -> dict:
-        return generate_goldens_streaming(emb_cfg, eval_cfg, progress_callback=progress_callback)
+        return generate_goldens_streaming(emb_cfg, eval_cfg, max_goldens=max_goldens, progress_callback=progress_callback)
 
     return StreamingResponse(stream_threaded(target), media_type="text/event-stream", headers=SSE_HEADERS)
 
