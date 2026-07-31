@@ -658,12 +658,16 @@ def generate_goldens_streaming(
     # via asyncio.to_thread (the SSE path). The sync code path avoids that
     # fragility entirely while still producing the same goldens.
     #
-    # filtration_config: the critic LLM is fully disabled (max_quality_retries=0,
-    #   critic_model=None). DeepEval's _rewrite_inputs never discards goldens —
-    #   it only retries low-scoring inputs up to max_quality_retries times — so
-    #   setting retries to 0 means the raw synthesized question passes through
-    #   unchanged with zero critic LLM calls. Manual curation of the output
-    #   dataset (per the README) is the sole quality gate.
+    # filtration_config: the critic LLM is never invoked (max_quality_retries=0)
+    #   so the raw synthesized question passes through unchanged with zero critic
+    #   LLM calls. DeepEval's _rewrite_inputs never discards goldens — it only
+    #   retries low-scoring inputs up to max_quality_retries times. The judge is
+    #   still passed as critic_model because FiltrationConfig.__post_init__ eagerly
+    #   constructs the critic via initialize_model(); passing None falls through
+    #   to GPTModel(model=None) which requires OPENAI_API_KEY. Since the loop body
+    #   never executes (retries=0), the critic_model is constructed but never
+    #   called. Manual curation of the output dataset (per the README) is the
+    #   sole quality gate.
     # evolution_config: the Synthesizer's default evolves extracted questions
     #   via 7 strategies in equal proportion, including HYPOTHETICAL (what-if
     #   questions that go BEYOND the source text), REASONING, and COMPARATIVE.
@@ -676,7 +680,7 @@ def generate_goldens_streaming(
         model=judge,
         async_mode=False,
         filtration_config=FiltrationConfig(
-            critic_model=None,
+            critic_model=judge,
             synthetic_input_quality_threshold=0.0,
             max_quality_retries=0,
         ),
