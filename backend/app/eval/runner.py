@@ -5,6 +5,7 @@ This module owns the canonical implementations of:
   - provider config helpers (generation / evaluation / embedding)
   - run_graph_for_question (invoke the Agentic RAG graph for one question)
   - run_evals_streaming (iterate goldens, score with 4 RAG metrics, emit progress)
+  - add_golden (append a manually-authored golden to the dataset)
   - load_latest_results (read the most recent .deepeval/*.json from disk)
 """
 import json
@@ -35,10 +36,6 @@ _BACKEND_ROOT = Path(__file__).resolve().parent.parent.parent
 EVAL_DIR = _BACKEND_ROOT / "tests" / "eval"
 GOLDEN_DATASET_PATH = EVAL_DIR / "golden_dataset.json"
 DEFAULT_RESULTS_DIR = str(_BACKEND_ROOT / ".deepeval")
-
-# Maximum number of goldens to synthesize from the Chroma store, keeping
-# golden generation and downstream evaluation bounded regardless of corpus size.
-MAX_GOLDENS = 20
 
 
 def _env(name: str, fallback: str = "") -> str:
@@ -574,156 +571,104 @@ def load_latest_results() -> Optional[dict]:
     return data
 
 
-def generate_goldens_streaming(
-    emb_cfg: dict,
-    eval_cfg: dict,
-    max_goldens: Optional[int] = None,
-    progress_callback: Optional[Callable[[dict], None]] = None,
-) -> dict:
-    """Synthesize goldens from the live Chroma store, one per child chunk.
+def add_golden(input: str, expected_output: str) -> dict:
+    """Append a manually-authored golden to golden_dataset.json.
 
-    Contexts are child chunks only (no parent docs) so each golden targets a
-    specific slice of a source document instead of clustering around the most
-    salient point of the full parent. This maximizes topical diversity across
-    the golden dataset.
+    Creates the file (bare-list format) if it doesn't exist. If the file
+    exists in the {providers, goldens} format, appends to the goldens list
+    and preserves the providers metadata. If it exists as a bare list,
+    appends to the list.
 
-    max_goldens controls how many contexts are fed to the Synthesizer:
-      - None  → deterministic stride sample down to MAX_GOLDENS (default 20)
-      - N <= chunk count → first N child chunks
-      - N > chunk count  → cycle through chunks from the start (N total)
+    Manual goldens have no source_context (the field is omitted) since they
+    are authored directly rather than synthesized from chunks.
 
-    The Synthesizer processes each context independently and always produces
-    exactly one golden per context (max_goldens_per_context=1). The critic LLM
-    is disabled (max_quality_retries=0) — raw synthesized questions pass
-    through unchanged, so manual curation of the output dataset is required.
-
-    Emits stage-level progress via progress_callback since the DeepEval
-    Synthesizer does not emit per-golden progress callbacks.
-
-    Returns {count, path} on completion. Raises on error (e.g. empty Chroma store).
+    Returns {"index", "input", "expected_output"} for the newly added golden.
+    Raises ValueError if input or expected_output is empty/whitespace.
     """
-    if progress_callback:
-        progress_callback({"stage": "reading_chroma", "message": "Reading chunks from Chroma store…"})
+    input = input.strip()
+    expected_output = expected_output.strip()
+    if not input or not expected_output:
+        raise ValueError("Both input and expected_output must be non-empty.")
 
-    for cfg_name, cfg in [("embedding", emb_cfg), ("evaluation", eval_cfg)]:
-        if not cfg.get("base_url") or not cfg.get("model"):
-            raise ValueError(
-                f"{cfg_name} provider base_url and model are required. "
-                f"Got base_url='{cfg.get('base_url', '')}', model='{cfg.get('model', '')}'. "
-                "Configure the evaluation and embedding providers in the sidebar."
-            )
+    data = _read_golden_file()
+    if data is None:
+        data = []
+    goldens = _extract_goldens(data)
 
-    from app.models.factory import get_embeddings
-    from app.vectorstore.chroma_store import ChromaStore
+    new_golden = {"input": input, "expected_output": expected_output}
+    goldens.append(new_golden)
 
-    embeddings = get_embeddings(emb_cfg["base_url"], emb_cfg["model"], emb_cfg["api_key"])
-    store = ChromaStore(embeddings=embeddings)
-
-    # Build one context per child chunk. Each context is a single string so
-    # the Synthesizer generates a question about that specific slice instead
-    # of clustering around the most salient point of a full parent document.
-    collection = store._get_store()._collection
-    results = collection.get(include=["documents", "metadatas"])
-    child_texts = results.get("documents", [])
-    if not child_texts:
-        raise ValueError("Chroma store is empty. Ingest documents first (via the UI or API).")
-
-    if max_goldens is None:
-        # Default: deterministic stride sample down to MAX_GOLDENS.
-        if len(child_texts) > MAX_GOLDENS:
-            stride = len(child_texts) / MAX_GOLDENS
-            selected = [child_texts[int(i * stride)] for i in range(MAX_GOLDENS)]
-        else:
-            selected = child_texts[:]
-    elif max_goldens <= len(child_texts):
-        selected = child_texts[:max_goldens]
+    if isinstance(data, dict) and "goldens" in data:
+        data["goldens"] = goldens
     else:
-        # Cycle through chunks from the start to reach the requested count.
-        n = len(child_texts)
-        selected = [child_texts[i % n] for i in range(max_goldens)]
-
-    contexts = [[text] for text in selected]
-
-    if progress_callback:
-        progress_callback({"stage": "synthesizing", "message": f"Synthesizing up to {len(contexts)} goldens (this may take a few minutes)…"})
-
-    from deepeval.synthesizer import Synthesizer
-    from deepeval.synthesizer.config import EvolutionConfig, FiltrationConfig
-    from deepeval.synthesizer.types import Evolution
-
-    judge = NvidiaNimJudge(eval_cfg["base_url"], eval_cfg["model"], eval_cfg["api_key"])
-    # async_mode=False: generate_goldens_from_contexts() internally calls
-    # loop.run_until_complete(...); under async_mode=True that requires
-    # nest_asyncio patching of a running loop when this function is invoked
-    # via asyncio.to_thread (the SSE path). The sync code path avoids that
-    # fragility entirely while still producing the same goldens.
-    #
-    # filtration_config: the critic LLM is never invoked (max_quality_retries=0)
-    #   so the raw synthesized question passes through unchanged with zero critic
-    #   LLM calls. DeepEval's _rewrite_inputs never discards goldens — it only
-    #   retries low-scoring inputs up to max_quality_retries times. The judge is
-    #   still passed as critic_model because FiltrationConfig.__post_init__ eagerly
-    #   constructs the critic via initialize_model(); passing None falls through
-    #   to GPTModel(model=None) which requires OPENAI_API_KEY. Since the loop body
-    #   never executes (retries=0), the critic_model is constructed but never
-    #   called. Manual curation of the output dataset (per the README) is the
-    #   sole quality gate.
-    # evolution_config: the Synthesizer's default evolves extracted questions
-    #   via 7 strategies in equal proportion, including HYPOTHETICAL (what-if
-    #   questions that go BEYOND the source text), REASONING, and COMPARATIVE.
-    #   Those evolutions are what produce expected answers containing invented
-    #   advice absent from the corpus, which makes ContextualRecall
-    #   unsatisfiable. We restrict evolutions to text-grounded strategies that
-    #   stay answerable from the provided context. This is a native DeepEval
-    #   knob (no custom judgment code).
-    synthesizer = Synthesizer(
-        model=judge,
-        async_mode=False,
-        filtration_config=FiltrationConfig(
-            critic_model=judge,
-            synthetic_input_quality_threshold=0.0,
-            max_quality_retries=0,
-        ),
-        evolution_config=EvolutionConfig(
-            evolutions={
-                Evolution.CONCRETIZING: 1 / 3,
-                Evolution.CONSTRAINED: 1 / 3,
-                Evolution.IN_BREADTH: 1 / 3,
-            },
-        ),
-    )
-    goldens_list = synthesizer.generate_goldens_from_contexts(
-        contexts=contexts,
-        max_goldens_per_context=1,
-    )
-
-    # Persist DeepEval's golden.context as source_context per golden. This is
-    # pure bookkeeping (no LLM calls) and, with the groundedness flag removed,
-    # is the sole curation aid: each expected output is auditable against the
-    # exact source chunk it was synthesized from, enabling bias-free manual
-    # review (the project README already mandates curating goldens).
-    goldens = []
-    for golden in goldens_list:
-        source_context = golden.context or []
-        goldens.append({
-            "input": golden.input,
-            "expected_output": golden.expected_output,
-            "source_context": source_context if isinstance(source_context, list) else ([source_context] if source_context else []),
-        })
-
-    output = {
-        "providers": {
-            "evaluation": _provider_meta(eval_cfg),
-            "embedding": _provider_meta(emb_cfg),
-        },
-        "goldens": goldens,
-    }
+        data = goldens
 
     GOLDEN_DATASET_PATH.parent.mkdir(parents=True, exist_ok=True)
     with open(GOLDEN_DATASET_PATH, "w", encoding="utf-8") as f:
-        json.dump(output, f, indent=2, ensure_ascii=False)
+        json.dump(data, f, indent=2, ensure_ascii=False)
 
-    if progress_callback:
-        progress_callback({"stage": "done", "message": f"Wrote {len(goldens)} goldens."})
+    return {"index": len(goldens) - 1, "input": input, "expected_output": expected_output}
 
-    return {"count": len(goldens), "path": str(GOLDEN_DATASET_PATH)}
+
+def _normalize_uploaded_goldens(data) -> list:
+    """Normalize uploaded JSON data to a flat list of {input, expected_output} dicts.
+
+    Accepts four shapes:
+      - Bare array:  [{"input": "...", "expected_output": "..."}, ...]
+      - Bare object: {"input": "...", "expected_output": "..."}
+      - Download-All export:  {"providers": {...}, "goldens": [...]}
+      - Download-single export: {"providers": {...}, "golden": {...}}
+
+    Returns a list of dicts (unvalidated — caller must check input/expected_output).
+    """
+    if isinstance(data, list):
+        return data
+    if isinstance(data, dict):
+        if "goldens" in data and isinstance(data["goldens"], list):
+            return data["goldens"]
+        if "golden" in data and isinstance(data["golden"], dict):
+            return [data["golden"]]
+        if "input" in data and "expected_output" in data:
+            return [data]
+    return []
+
+
+def import_goldens(new_goldens: list) -> dict:
+    """Append a list of uploaded golden dicts to golden_dataset.json.
+
+    Each dict must have non-empty 'input' and 'expected_output' (after strip).
+    Invalid entries are skipped (counted in 'skipped'). Preserves existing
+    file format (dict-with-providers stays dict, bare list stays list).
+    Creates the file if it doesn't exist.
+
+    Returns {"imported": N, "skipped": M}.
+    """
+    data = _read_golden_file()
+    if data is None:
+        data = []
+    goldens = _extract_goldens(data)
+
+    imported = 0
+    skipped = 0
+    for g in new_goldens:
+        if not isinstance(g, dict):
+            skipped += 1
+            continue
+        inp = (g.get("input") or "").strip()
+        exp = (g.get("expected_output") or "").strip()
+        if not inp or not exp:
+            skipped += 1
+            continue
+        goldens.append({"input": inp, "expected_output": exp})
+        imported += 1
+
+    if isinstance(data, dict) and "goldens" in data:
+        data["goldens"] = goldens
+    else:
+        data = goldens
+
+    GOLDEN_DATASET_PATH.parent.mkdir(parents=True, exist_ok=True)
+    with open(GOLDEN_DATASET_PATH, "w", encoding="utf-8") as f:
+        json.dump(data, f, indent=2, ensure_ascii=False)
+
+    return {"imported": imported, "skipped": skipped}

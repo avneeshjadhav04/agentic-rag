@@ -1,9 +1,9 @@
 "use client";
 
 import { useConfigStore } from "@/store/configStore";
-import { fetchEvalResults, fetchEvalResultByName, fetchGoldensExist, listEvalRuns, listGoldens, streamEvalRun, streamGenerateGoldens, clearGoldens, deleteGolden, clearEvalRuns, deleteEvalRun } from "@/lib/api";
+import { fetchEvalResults, fetchEvalResultByName, fetchGoldensExist, listEvalRuns, listGoldens, streamEvalRun, addGolden, importGoldens, clearGoldens, deleteGolden, clearEvalRuns, deleteEvalRun } from "@/lib/api";
 import { useState, useEffect, useCallback, useMemo, useRef } from "react";
-import { Loader2, RefreshCw, Play, Plus, Minus, Copy, Check, Download, Sparkles, X } from "lucide-react";
+import { Loader2, RefreshCw, Play, Plus, Minus, Copy, Check, Download, Upload, X } from "lucide-react";
 import { EvalSummary, GoldenResult, MetricResult, StoredEvalRun, StoredGolden, EvalProviders } from "@/types";
 
 const labelClass = "font-mono text-[10px] uppercase tracking-widest text-muted";
@@ -132,14 +132,10 @@ export default function EvalPanel() {
 
   const [summary, setSummary] = useState<EvalSummary | null>(null);
   const [running, setRunning] = useState(false);
-  const [generating, setGenerating] = useState(false);
-  const [goldenCount, setGoldenCount] = useState<string>("");
   const [loadingResults, setLoadingResults] = useState(false);
   const [message, setMessage] = useState("");
   const [messageType, setMessageType] = useState<"info" | "warn" | "error">("info");
   const [progressCount, setProgressCount] = useState(0);
-  const [genStage, setGenStage] = useState("");
-  const [elapsed, setElapsed] = useState(0);
   const [goldensExist, setGoldensExist] = useState(false);
   const [storedGoldens, setStoredGoldens] = useState<StoredGolden[]>([]);
   const [storedRuns, setStoredRuns] = useState<StoredEvalRun[]>([]);
@@ -156,6 +152,11 @@ export default function EvalPanel() {
   const [deletingRun, setDeletingRun] = useState<string | null>(null);
   const [downloadingRun, setDownloadingRun] = useState<string | null>(null);
   const [goldenProviders, setGoldenProviders] = useState<EvalProviders>({});
+  const [newGoldenInput, setNewGoldenInput] = useState("");
+  const [newGoldenExpected, setNewGoldenExpected] = useState("");
+  const [addingGolden, setAddingGolden] = useState(false);
+  const [uploadingGoldens, setUploadingGoldens] = useState(false);
+  const fileInputRef = useRef<HTMLInputElement>(null);
 
   const refreshResults = useCallback(async () => {
     setLoadingResults(true);
@@ -235,12 +236,6 @@ export default function EvalPanel() {
     return () => clearTimeout(timer);
   }, [message]);
 
-  useEffect(() => {
-    if (!generating) return;
-    const interval = setInterval(() => setElapsed((e) => e + 1), 1000);
-    return () => clearInterval(interval);
-  }, [generating]);
-
   const handleRun = async () => {
     setRunning(true);
     setMessage("");
@@ -291,34 +286,44 @@ export default function EvalPanel() {
     }
   };
 
-  const handleGenerate = async () => {
-    setGenerating(true);
-    setMessage("");
-    setGenStage("Generating…");
-    setElapsed(0);
-    const parsed = parseInt(goldenCount, 10);
-    const count = Number.isFinite(parsed) && parsed > 0 ? parsed : undefined;
+  const handleAddGolden = async () => {
+    const input = newGoldenInput.trim();
+    const expected = newGoldenExpected.trim();
+    if (!input || !expected) return;
+    setAddingGolden(true);
     try {
-      const generator = streamGenerateGoldens(effectiveEvaluation, effectiveEmbedding, count);
-      let result = await generator.next();
-      while (!result.done) {
-        if (result.value.type === "progress") {
-          setGenStage(result.value.value?.message || "Working…");
-        }
-        result = await generator.next();
-      }
-      if (result.value) {
-        setMessage(`Generated ${result.value.count} goldens. You can now run evals.`);
-        setMessageType("info");
-        setGoldensExist(true);
-        refreshStoredGoldens();
-      }
+      await addGolden(input, expected);
+      setNewGoldenInput("");
+      setNewGoldenExpected("");
+      setGoldensExist(true);
+      refreshStoredGoldens();
+      setMessage("Golden added.");
+      setMessageType("info");
     } catch (e: any) {
-      setMessage(e.message || "Golden generation failed");
+      setMessage(e.message || "Failed to add golden");
       setMessageType("error");
     } finally {
-      setGenerating(false);
-      setGenStage("");
+      setAddingGolden(false);
+    }
+  };
+
+  const handleUploadGoldens = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const files = Array.from(e.target.files || []);
+    if (files.length === 0) return;
+    setUploadingGoldens(true);
+    try {
+      const result = await importGoldens(files);
+      setGoldensExist(true);
+      refreshStoredGoldens();
+      const skipMsg = result.skipped > 0 ? `, skipped ${result.skipped} invalid` : "";
+      setMessage(`Imported ${result.imported} golden${result.imported === 1 ? "" : "s"}${skipMsg}.`);
+      setMessageType("info");
+    } catch (err: any) {
+      setMessage(err.message || "Failed to upload goldens");
+      setMessageType("error");
+    } finally {
+      setUploadingGoldens(false);
+      if (fileInputRef.current) fileInputRef.current.value = "";
     }
   };
 
@@ -495,51 +500,12 @@ export default function EvalPanel() {
         </p>
       </section>
 
-      {/* Step II: Generate Goldens */}
-      <section className="space-y-3">
-        <div className="flex items-center gap-3">
-          {goldensExist && <Check className="w-3.5 h-3.5 text-success flex-shrink-0" />}
-          <span className="font-mono text-[11px] uppercase tracking-widest text-text">II.</span>
-          <button
-            onClick={handleGenerate}
-            disabled={generating || running}
-            className={btnPrimary}
-          >
-            {generating ? (
-              <>
-                <Loader2 className="w-3.5 h-3.5 animate-spin" />
-                {genStage || "Generating…"}
-              </>
-            ) : (
-              <>
-                <Sparkles className="w-3.5 h-3.5" />
-                Generate Goldens
-              </>
-            )}
-          </button>
-          <input
-            type="number"
-            min={1}
-            value={goldenCount}
-            onChange={(e) => setGoldenCount(e.target.value)}
-            disabled={generating || running}
-            placeholder="all (≤20)"
-            className="w-24 bg-panel border border-line rounded-none px-2 py-2 text-sm text-text placeholder-muted transition disabled:opacity-40 [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none"
-          />
-        </div>
-        {generating && (
-          <p className="font-mono text-[10px] uppercase tracking-widest text-muted">
-            Generating goldens… {elapsed}s
-          </p>
-        )}
-      </section>
-
-      {/* Step III: Run Evals */}
+      {/* Step II: Run Evals */}
       <section className="space-y-3">
         <div className="flex items-center gap-3">
           {summary && <Check className="w-3.5 h-3.5 text-success flex-shrink-0" />}
-          <span className="font-mono text-[11px] uppercase tracking-widest text-text">III.</span>
-          <button onClick={handleRun} disabled={running || generating} className={btnPrimary}>
+          <span className="font-mono text-[11px] uppercase tracking-widest text-text">II.</span>
+          <button onClick={handleRun} disabled={running} className={btnPrimary}>
             {running ? (
               <>
                 <Loader2 className="w-3.5 h-3.5 animate-spin" />
@@ -650,7 +616,71 @@ export default function EvalPanel() {
           </span>
         </button>
         {goldensExpanded && (
-          <div className="px-3 pb-3 max-h-40 overflow-y-auto space-y-1">
+          <div className="px-3 pb-3 space-y-2">
+            <div className="space-y-1.5">
+              <textarea
+                value={newGoldenInput}
+                onChange={(e) => setNewGoldenInput(e.target.value)}
+                disabled={addingGolden}
+                placeholder="Question"
+                rows={2}
+                className="w-full bg-panel border border-line rounded-none px-3 py-2 text-sm text-text placeholder-muted transition disabled:opacity-40 resize-none"
+              />
+              <textarea
+                value={newGoldenExpected}
+                onChange={(e) => setNewGoldenExpected(e.target.value)}
+                disabled={addingGolden}
+                placeholder="Expected answer"
+                rows={3}
+                className="w-full bg-panel border border-line rounded-none px-3 py-2 text-sm text-text placeholder-muted transition disabled:opacity-40 resize-none"
+              />
+              <button
+                onClick={handleAddGolden}
+                disabled={addingGolden || !newGoldenInput.trim() || !newGoldenExpected.trim()}
+                className={btnPrimary + " w-fit"}
+              >
+                {addingGolden ? (
+                  <>
+                    <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                    Adding…
+                  </>
+                ) : (
+                  <>
+                    <Plus className="w-3.5 h-3.5" />
+                    Add Golden
+                  </>
+                )}
+              </button>
+              <div className="flex items-center gap-2 pt-1">
+                <input
+                  ref={fileInputRef}
+                  type="file"
+                  accept=".json"
+                  multiple
+                  onChange={handleUploadGoldens}
+                  disabled={uploadingGoldens}
+                  className="hidden"
+                />
+                <button
+                  onClick={() => fileInputRef.current?.click()}
+                  disabled={uploadingGoldens || addingGolden}
+                  className="flex items-center gap-2 px-4 py-2 rounded-none border border-line text-muted font-mono text-[11px] uppercase tracking-widest hover:border-accent hover:text-text transition disabled:opacity-40"
+                >
+                  {uploadingGoldens ? (
+                    <>
+                      <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                      Uploading…
+                    </>
+                  ) : (
+                    <>
+                      <Upload className="w-3.5 h-3.5" />
+                      Upload Goldens
+                    </>
+                  )}
+                </button>
+              </div>
+            </div>
+            <div className="max-h-40 overflow-y-auto space-y-1">
             {storedGoldens.length === 0 ? (
               <p className="font-mono text-[10px] uppercase tracking-widest text-muted">No goldens stored yet.</p>
             ) : (
@@ -709,6 +739,7 @@ export default function EvalPanel() {
                 </button>
               </div>
             )}
+            </div>
           </div>
         )}
       </div>

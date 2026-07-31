@@ -74,11 +74,6 @@ export interface GoldenGenerationStage {
   message: string;
 }
 
-export interface GoldenGenerationResult {
-  count: number;
-  path: string;
-}
-
 export interface StoredGolden {
   index: number;
   input: string;
