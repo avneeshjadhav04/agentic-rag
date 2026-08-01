@@ -2,25 +2,28 @@
 
 POST /api/eval/run              — SSE stream that runs DeepEval over the golden dataset,
                                    emitting per-golden progress + a final aggregate summary.
-POST /api/eval/generate-goldens — SSE stream that synthesizes ~20 goldens from the live
-                                   Chroma store, emitting stage progress + final count.
+POST /api/eval/goldens          — Append a manually-authored golden (input + expected_output)
+                                   to golden_dataset.json.
+POST /api/eval/goldens/import   — Upload one or more JSON files containing goldens to append.
 GET  /api/eval/results          — returns the latest on-disk eval result JSON.
 """
-from typing import Callable
+import json
+from typing import Callable, List
 
-from fastapi import APIRouter, Form
+from fastapi import APIRouter, File, Form, UploadFile
 from fastapi.responses import StreamingResponse
 
 from app.sse import SSE_HEADERS, stream_threaded
 
 from app.eval.runner import (
+    add_golden,
     clear_eval_runs,
     clear_goldens,
     delete_eval_run,
     delete_golden,
-    generate_goldens_streaming,
     get_golden_providers,
     goldens_exist,
+    import_goldens,
     list_eval_runs,
     list_goldens,
     load_latest_results,
@@ -56,24 +59,39 @@ async def eval_run(
     return StreamingResponse(stream_threaded(target), media_type="text/event-stream", headers=SSE_HEADERS)
 
 
-@router.post("/generate-goldens")
-async def eval_generate_goldens(
-    evaluation_provider: str = Form(default=""),
-    evaluation_base_url: str = Form(...),
-    evaluation_model: str = Form(...),
-    evaluation_api_key: str = Form(default=""),
-    embed_provider: str = Form(default=""),
-    embed_base_url: str = Form(...),
-    embed_model: str = Form(...),
-    embed_api_key: str = Form(default=""),
+@router.post("/goldens")
+async def eval_add_golden(
+    input: str = Form(...),
+    expected_output: str = Form(...),
 ):
-    eval_cfg = {"provider": evaluation_provider, "base_url": evaluation_base_url, "model": evaluation_model, "api_key": evaluation_api_key}
-    emb_cfg = {"provider": embed_provider, "base_url": embed_base_url, "model": embed_model, "api_key": embed_api_key}
+    """Append a manually-authored golden to golden_dataset.json."""
+    golden = add_golden(input, expected_output)
+    return golden
 
-    def target(progress_callback: Callable[[dict], None]) -> dict:
-        return generate_goldens_streaming(emb_cfg, eval_cfg, progress_callback=progress_callback)
 
-    return StreamingResponse(stream_threaded(target), media_type="text/event-stream", headers=SSE_HEADERS)
+@router.post("/goldens/import")
+async def eval_import_goldens(
+    files: List[UploadFile] = File(...),
+):
+    """Upload one or more JSON files containing goldens to append.
+
+    Accepts four JSON shapes: bare array, bare single golden object,
+    {goldens: [...]} export, or {golden: {...}} export.
+    Invalid entries (missing input/expected_output) are skipped.
+    """
+    from app.eval.runner import _normalize_uploaded_goldens
+
+    all_goldens: list = []
+    for f in files:
+        raw = await f.read()
+        try:
+            data = json.loads(raw)
+        except (json.JSONDecodeError, UnicodeDecodeError):
+            raise ValueError(f"File '{f.filename}' is not valid JSON.")
+        all_goldens.extend(_normalize_uploaded_goldens(data))
+
+    result = import_goldens(all_goldens)
+    return result
 
 
 @router.get("/results")

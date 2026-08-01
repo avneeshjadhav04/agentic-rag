@@ -7,7 +7,7 @@ from typing import List, Tuple
 from langchain_core.documents import Document
 from langchain_community.document_loaders import (
     Docx2txtLoader,
-    PyPDFLoader,
+    PDFPlumberLoader,
     TextLoader,
 )
 from langchain_community.document_loaders.web_base import WebBaseLoader
@@ -28,7 +28,7 @@ def load_files(entries: List[Tuple[str, bytes]]) -> tuple[List[Document], list[d
                 tmp.write(content)
                 tmp_path = tmp.name
             if suffix == ".pdf":
-                loader = PyPDFLoader(tmp_path)
+                loader = PDFPlumberLoader(tmp_path)
             elif suffix in (".docx", ".doc"):
                 loader = Docx2txtLoader(tmp_path)
             else:

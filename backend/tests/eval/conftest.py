@@ -31,7 +31,7 @@ def rag_graph():
 
 @pytest.fixture(scope="session")
 def golden_dataset() -> list[dict]:
-    """Load the golden Q&A dataset produced by generate_goldens.py."""
+    """Load the golden Q&A dataset (golden_dataset.json)."""
     try:
         return load_golden_dataset()
     except (FileNotFoundError, ValueError) as e:

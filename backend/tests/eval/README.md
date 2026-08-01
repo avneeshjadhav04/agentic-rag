@@ -34,16 +34,12 @@ All three default to NVIDIA NIM. Override any via env vars or the UI sidebar.
 
 ## Running
 
-### 1. Generate the golden dataset (one-time)
+### 1. Create the golden dataset
 
-```bash
-cd backend
-python -m tests.eval.generate_goldens
-```
-
-This reads chunks from your live Chroma store and synthesizes ~20 goldens
-via DeepEval's `Synthesizer`, writing `golden_dataset.json` in this directory.
-**Curate the goldens before committing** — they are the ground truth for all metrics.
+Goldens are authored manually via the UI's "Stored Goldens" section
+(question + expected answer form) or by directly editing
+`golden_dataset.json` in this directory. Each golden is a grounded
+Q&A pair whose expected output is answerable from the ingested corpus.
 
 ### 2. Run the evaluations
 
