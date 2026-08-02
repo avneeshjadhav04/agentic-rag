@@ -4,11 +4,13 @@ import { useState } from "react";
 import { cn } from "@/lib/cn";
 import Sidebar from "@/components/Sidebar";
 import Chat from "@/components/Chat";
+import { ConfigProvider } from "@/components/ConfigProvider";
 
 export default function Home() {
   const [sidebarOpen, setSidebarOpen] = useState(false);
 
   return (
+    <ConfigProvider>
     <div className="flex h-screen w-full bg-background text-text overflow-hidden">
       {/* Mobile overlay backdrop */}
       {sidebarOpen && (
@@ -36,5 +38,6 @@ export default function Home() {
         <Chat onToggleSidebar={() => setSidebarOpen(!sidebarOpen)} />
       </main>
     </div>
+    </ConfigProvider>
   );
 }

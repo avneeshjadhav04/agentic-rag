@@ -1,8 +1,8 @@
 "use client";
 
-import { useConfigStore, HARDCODED_GENERATION_DEFAULTS, HARDCODED_EVALUATION_DEFAULTS, HARDCODED_EMBEDDING_DEFAULTS } from "@/store/configStore";
+import { useConfigStore } from "@/store/configStore";
 import { ProviderField, ProviderPreset } from "@/types";
-import { fetchDefaults, fetchProviders } from "@/lib/api";
+import { fetchProviders } from "@/lib/api";
 import { useEffect, useState } from "react";
 import { Eye, EyeOff } from "lucide-react";
 
@@ -42,7 +42,7 @@ const inputClass =
   "w-full bg-panel border border-line rounded-none px-3 py-2 text-sm text-text placeholder-muted transition";
 
 export default function ProviderConfig() {
-  const { generation, evaluation, embedding, envGenerationApiKey, envEvalApiKey, envEmbedApiKey, setGeneration, setEvaluation, setEmbedding, setEnvGenerationApiKey, setEnvEvalApiKey, setEnvEmbedApiKey, setWebSearchEnabled, webSearchEnabled, temperature, setTemperature, chunkSize, chunkOverlap, setChunkSize, setChunkOverlap } =
+  const { generation, evaluation, embedding, envGenerationApiKey, envEvalApiKey, envEmbedApiKey, setGeneration, setEvaluation, setEmbedding, setWebSearchEnabled, webSearchEnabled, temperature, setTemperature, chunkSize, chunkOverlap, setChunkSize, setChunkOverlap } =
     useConfigStore();
   const [presets, setPresets] = useState<ProviderPreset[]>(DEFAULT_PRESETS);
   const [showGenerationKey, setShowGenerationKey] = useState(false);
@@ -55,39 +55,7 @@ export default function ProviderConfig() {
         if (data && data.length) setPresets(data);
       })
       .catch(() => {});
-
-    fetchDefaults()
-      .then((defaults) => {
-        setEnvGenerationApiKey(defaults.generation?.apiKey || "");
-        setEnvEvalApiKey(defaults.evaluation?.apiKey || "");
-        setEnvEmbedApiKey(defaults.embedding?.apiKey || "");
-
-        const state = useConfigStore.getState();
-
-        const applyIfUnchanged = (
-          current: ProviderField,
-          hardcoded: ProviderField,
-          env: ProviderField
-        ): Partial<ProviderField> => {
-          const updates: Partial<ProviderField> = {};
-          for (const key of Object.keys(hardcoded) as (keyof ProviderField)[]) {
-            if (key === "apiKey") continue;
-            if (current[key] === hardcoded[key] && env[key] !== undefined) {
-              updates[key] = env[key];
-            }
-          }
-          return updates;
-        };
-
-        const genUpdates = applyIfUnchanged(state.generation, HARDCODED_GENERATION_DEFAULTS, defaults.generation);
-        const evalUpdates = applyIfUnchanged(state.evaluation, HARDCODED_EVALUATION_DEFAULTS, defaults.evaluation);
-        const embedUpdates = applyIfUnchanged(state.embedding, HARDCODED_EMBEDDING_DEFAULTS, defaults.embedding);
-        if (Object.keys(genUpdates).length) setGeneration(genUpdates);
-        if (Object.keys(evalUpdates).length) setEvaluation(evalUpdates);
-        if (Object.keys(embedUpdates).length) setEmbedding(embedUpdates);
-      })
-      .catch(() => {});
-  }, [setGeneration, setEvaluation, setEmbedding, setEnvGenerationApiKey, setEnvEvalApiKey, setEnvEmbedApiKey]);
+  }, []);
 
   const applyGenerationPreset = (id: string) => {
     const preset = presets.find((p) => p.id === id);
