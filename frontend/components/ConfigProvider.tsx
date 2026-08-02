@@ -17,38 +17,59 @@ export function ConfigProvider({ children }: { children: React.ReactNode }) {
   const setConfigLoaded = useConfigStore((s) => s.setConfigLoaded);
 
   useEffect(() => {
-    fetchDefaults()
-      .then((defaults) => {
-        setEnvGenerationApiKey(defaults.generation?.apiKey || "");
-        setEnvEvalApiKey(defaults.evaluation?.apiKey || "");
-        setEnvEmbedApiKey(defaults.embedding?.apiKey || "");
+    let cancelled = false;
+    let attempt = 0;
+    const maxAttempts = 6;
+    const delays = [0, 500, 1000, 2000, 3000, 5000];
 
-        const state = useConfigStore.getState();
+    const tryFetch = () => {
+      if (cancelled) return;
+      fetchDefaults()
+        .then((defaults) => {
+          if (cancelled) return;
+          setEnvGenerationApiKey(defaults.generation?.apiKey || "");
+          setEnvEvalApiKey(defaults.evaluation?.apiKey || "");
+          setEnvEmbedApiKey(defaults.embedding?.apiKey || "");
 
-        const applyIfUnchanged = (
-          current: ProviderField,
-          hardcoded: ProviderField,
-          env: ProviderField
-        ): Partial<ProviderField> => {
-          const updates: Partial<ProviderField> = {};
-          for (const key of Object.keys(hardcoded) as (keyof ProviderField)[]) {
-            if (key === "apiKey") continue;
-            if (current[key] === hardcoded[key] && env[key] !== undefined) {
-              updates[key] = env[key];
+          const state = useConfigStore.getState();
+
+          const applyIfUnchanged = (
+            current: ProviderField,
+            hardcoded: ProviderField,
+            env: ProviderField
+          ): Partial<ProviderField> => {
+            const updates: Partial<ProviderField> = {};
+            for (const key of Object.keys(hardcoded) as (keyof ProviderField)[]) {
+              if (key === "apiKey") continue;
+              if (current[key] === hardcoded[key] && env[key] !== undefined) {
+                updates[key] = env[key];
+              }
             }
-          }
-          return updates;
-        };
+            return updates;
+          };
 
-        const genUpdates = applyIfUnchanged(state.generation, HARDCODED_GENERATION_DEFAULTS, defaults.generation);
-        const evalUpdates = applyIfUnchanged(state.evaluation, HARDCODED_EVALUATION_DEFAULTS, defaults.evaluation);
-        const embedUpdates = applyIfUnchanged(state.embedding, HARDCODED_EMBEDDING_DEFAULTS, defaults.embedding);
-        if (Object.keys(genUpdates).length) setGeneration(genUpdates);
-        if (Object.keys(evalUpdates).length) setEvaluation(evalUpdates);
-        if (Object.keys(embedUpdates).length) setEmbedding(embedUpdates);
-      })
-      .catch(() => {})
-      .finally(() => setConfigLoaded(true));
+          const genUpdates = applyIfUnchanged(state.generation, HARDCODED_GENERATION_DEFAULTS, defaults.generation);
+          const evalUpdates = applyIfUnchanged(state.evaluation, HARDCODED_EVALUATION_DEFAULTS, defaults.evaluation);
+          const embedUpdates = applyIfUnchanged(state.embedding, HARDCODED_EMBEDDING_DEFAULTS, defaults.embedding);
+          if (Object.keys(genUpdates).length) setGeneration(genUpdates);
+          if (Object.keys(evalUpdates).length) setEvaluation(evalUpdates);
+          if (Object.keys(embedUpdates).length) setEmbedding(embedUpdates);
+
+          setConfigLoaded(true);
+        })
+        .catch(() => {
+          if (cancelled) return;
+          attempt += 1;
+          if (attempt < maxAttempts) {
+            setTimeout(tryFetch, delays[attempt]);
+          } else {
+            setConfigLoaded(true);
+          }
+        });
+    };
+    tryFetch();
+
+    return () => { cancelled = true; };
   }, [setGeneration, setEvaluation, setEmbedding, setEnvGenerationApiKey, setEnvEvalApiKey, setEnvEmbedApiKey, setConfigLoaded]);
 
   if (!configLoaded) {
