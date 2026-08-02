@@ -68,6 +68,7 @@ export interface ConfigState {
   envGenerationApiKey: string;
   envEvalApiKey: string;
   envEmbedApiKey: string;
+  configLoaded: boolean;
   webSearchEnabled: boolean;
   temperature: number;
   chunkSize: number;
@@ -84,6 +85,7 @@ export interface ConfigState {
   setEnvGenerationApiKey: (key: string) => void;
   setEnvEvalApiKey: (key: string) => void;
   setEnvEmbedApiKey: (key: string) => void;
+  setConfigLoaded: (loaded: boolean) => void;
 }
 
 export const useConfigStore = create<ConfigState>()(
@@ -95,6 +97,7 @@ export const useConfigStore = create<ConfigState>()(
       envGenerationApiKey: "",
       envEvalApiKey: "",
       envEmbedApiKey: "",
+      configLoaded: false,
       webSearchEnabled: true,
       temperature: 0.7,
       chunkSize: 1000,
@@ -107,6 +110,7 @@ export const useConfigStore = create<ConfigState>()(
       setEnvGenerationApiKey: (key) => set({ envGenerationApiKey: key }),
       setEnvEvalApiKey: (key) => set({ envEvalApiKey: key }),
       setEnvEmbedApiKey: (key) => set({ envEmbedApiKey: key }),
+      setConfigLoaded: (loaded) => set({ configLoaded: loaded }),
       setWebSearchEnabled: (enabled) => set({ webSearchEnabled: enabled }),
       setTemperature: (temp) => set({ temperature: temp }),
       setChunkSize: (size) => set({ chunkSize: size }),
@@ -116,7 +120,7 @@ export const useConfigStore = create<ConfigState>()(
     {
       name: "config-storage",
       storage: configStorage,
-      partialize: ({ envGenerationApiKey, envEvalApiKey, envEmbedApiKey, sourcesCount, setGeneration, setEvaluation, setEmbedding, setWebSearchEnabled, setTemperature, setChunkSize, setChunkOverlap, setSourcesCount, setEnvGenerationApiKey, setEnvEvalApiKey, setEnvEmbedApiKey, ...rest }) => rest,
+      partialize: ({ envGenerationApiKey, envEvalApiKey, envEmbedApiKey, configLoaded, sourcesCount, setGeneration, setEvaluation, setEmbedding, setWebSearchEnabled, setTemperature, setChunkSize, setChunkOverlap, setSourcesCount, setEnvGenerationApiKey, setEnvEvalApiKey, setEnvEmbedApiKey, setConfigLoaded, ...rest }) => rest,
     }
   )
 );
