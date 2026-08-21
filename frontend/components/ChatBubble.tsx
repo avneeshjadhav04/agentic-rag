@@ -54,14 +54,27 @@ function CodeBlock({ language, children }: { language: string; children: string 
 
 function SourcesPanel({ trace }: { trace: any[] }) {
   const [expanded, setExpanded] = useState(false);
-  const generateStep = trace.filter((t) => t.step === "generate").pop();
-  const sources: { source_id: string; source_name: string; isWeb: boolean; chunks: number }[] =
-    (generateStep?.sources_used || []).map((s: any) => ({
-      source_id: s.source_id,
-      source_name: s.source_name,
-      isWeb: s.source_name.startsWith("http://") || s.source_name.startsWith("https://"),
-      chunks: s.chunks,
-    }));
+  const sources: { source_id: string; source_name: string; isWeb: boolean; chunks: number }[] = [];
+  for (const step of trace) {
+    if (step.step !== "tool_result") continue;
+    if (step.tool === "vector_search") {
+      for (const s of step.sources || []) {
+        sources.push({
+          source_id: s.source_id,
+          source_name: s.source_name,
+          isWeb: s.source_name.startsWith("http://") || s.source_name.startsWith("https://"),
+          chunks: s.chunks,
+        });
+      }
+    } else if (step.tool === "web_fetch" && step.url) {
+      sources.push({
+        source_id: step.url,
+        source_name: step.url,
+        isWeb: true,
+        chunks: 1,
+      });
+    }
+  }
 
   if (sources.length === 0) return null;
 
